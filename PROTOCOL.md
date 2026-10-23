@@ -53,7 +53,7 @@ except `bench`. Commands are applied in the order they arrive.
 ```json
 {"t": "load", "id": 1, "url": "https://…", "headers": {"Referer": "…"},
  "item": "tt0903747:1:1", "title": "Breaking Bad S1E1",
- "start_ms": 1234000, "start": "exact", "bitrate": 25300000,
+ "start_ms": 1234000, "bitrate": 25300000,
  "audio": "eng", "subs": ["eng", "spa"], "play": true}
 ```
 
@@ -63,12 +63,12 @@ except `bench`. Commands are applied in the order they arrive.
 | `headers` | Extra request headers for the link and anything it redirects to. Optional |
 | `item` | The agent's id for what this is. Every event about it carries it back, so an event from the previous file can't be taken for one from this file |
 | `title` | Shown on the player's screen when it shows the time |
-| `start_ms` | Where to start. 0 or absent: the beginning |
-| `start` | `"exact"` (the default) lands on the millisecond. `"sync"` starts at the keyframe at or before it, which is faster and plays at most a few seconds again |
+| `start_ms` | Where to start, to the millisecond. 0 or absent: the beginning |
 | `bitrate` | The file's average bit/s if the agent knows it (size / length). It sizes the buffer; without it, the player works it out once the file's header is read |
 | `audio` | ISO 639-2 language for the audio (`eng`, `spa`, `chs`/`cht` for the two Chinese scripts). Commentary and audio-description tracks are never chosen by language. Absent or null: the file's default track |
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
 | `play` | `false` loads it paused. Default `true` |
+| `http` | `platform`, `httpengine` or `okhttp`: the HTTP stack for this link (for measuring; absent: the player's default) |
 
 It replaces what's loaded in place: the screen stays, there's no relaunch. If a `preload` of the same `url` is
 ready, it's used. The answer comes as soon as loading has started; `first_frame` follows when the picture moves.
@@ -182,12 +182,12 @@ Events have no `id`. Each one about a file carries its `item`.
 | `pos` | `pos`, `dur`, `buf` (ms; `buf` is how far ahead is buffered) | Every second while playing, every 10 s otherwise, and at once after a load, seek, pause or play |
 | `first_frame` | `ms` (since the `load` or `seek` arrived), `after` (`load` or `seek`), `in_buffer` for a seek | When the picture first moves after either |
 | `tracks` | `audio`, `text` (as for the command) | When they're known, and after every change |
-| `video` | `decoder`, `mime`, `codecs`, `w`, `h`, `fps`, `hdr` (`dv`, `hdr10+`, `hdr10`, `hlg`, `sdr`), `dv_profile` | When the video decoder starts |
-| `audio` | `mime`, `ch`, `rate`, `out` (`passthrough` or `pcm`), `encoding` | When the audio output starts |
-| `timing` | `ms`: `{"connect", "first_byte", "prepared", "first_frame", "ready"}` from the load's arrival; `bytes`, `requests`, `preloaded` | Once per load, at `ready` |
+| `video` | `decoder`, `mime`, `codecs`, `w`, `h`, `fps`, `hdr` (`dv`, `hdr10`, `hlg`, `sdr`; HDR10+ is metadata in each frame, not in the header, so an HDR10+ file says `hdr10`), `dv_profile`, `init_ms` (the decoder's start-up) | When the video decoder starts |
+| `audio` | `mime`, `ch`, `rate`, `out` (`passthrough` or `pcm`), `encoding`, `offload` | When the audio output starts |
+| `timing` | `ms`: `{"first_byte", "prepared", "first_frame", "ready"}` from the load's arrival; `bytes`, `requests`, `preloaded`, `cap_mb` (the buffer's byte cap) | Once per load, when it's ready and the picture has moved |
 | `error` | `code` (Media3's name, e.g. `ERROR_CODE_IO_BAD_HTTP_STATUS`), `http` (the status, if any), `message`, `fatal` | On errors. Messages never contain the link |
 | `ended` | `pos`, `dur` | At the end of the file |
-| `closed` | `pos`, `dur`, `why` (`stop`, `back`, `home`, `error`, `replaced`) | The last word about an item: on `stop`, Back, leaving the screen, a fatal error, or a `load` of something else. Sent before the decoder is released |
+| `closed` | `pos`, `dur`, `why` (`stop`, `back`, `home`, `error`, `replaced`, `idle`) | The last word about an item: on `stop`, Back, leaving the screen, a fatal error, a `load` of something else, or a minute after the end with nothing loaded since (the screen then closes). Sent before the decoder is released |
 | `preloaded` | `ms` (how long it took) | When a `preload` is ready |
 | `key` | `key` (`next`, `previous`) | The remote's next or previous while the player is in front: the agent decides what comes next |
 
@@ -200,7 +200,8 @@ Events have no `id`. Each one about a file carries its `item`.
 
 `lang` is the file's language, normalised the way Media3 does it: ISO 639-1 where one exists (`en`, `es`, `zh`),
 else ISO 639-2. `label` is the track's name in the file (an MKV's `Name`): Simplified or Traditional Chinese,
-commentary and SDH are only told apart there. `codec` and `ch` are for audio tracks only.
+commentary and SDH are only told apart there. `ch` and `commentary` (commentary or audio description, by name) are
+for audio tracks only. `codec` is short: `eac3`, `truehd`, `dts-hd`, `srt`, `ass`, `pgs`…
 
 ## Security
 

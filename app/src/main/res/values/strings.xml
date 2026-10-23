@@ -3,4 +3,6 @@
     <string name="app_name">TV Agent Player</string>
     <string name="not_paired">Not paired with tv-agent: run `tv-agent tv pair` on the computer</string>
     <string name="connecting">Connecting to tv-agent…</string>
+    <string name="refused">tv-agent refused this player (%1$s): pair it again with `tv-agent tv pair`</string>
+    <string name="paused">Paused</string>
 </resources>

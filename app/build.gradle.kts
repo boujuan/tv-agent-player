@@ -67,6 +67,9 @@ android {
         // A TV-only app on Android 14, sideloaded and opened only by tv-agent: Play's target-level, launcher and
         // ChromeOS rules don't apply.
         disable += listOf("ExpiredTargetSdkVersion", "MissingTvBanner", "MissingLeanbackLauncher", "ChromeOsAbiSupport")
+        // The player is built on Media3's @UnstableApi parts (renderer, track selector, load control, preload): that
+        // is why Media3 is pinned (gradle/libs.versions.toml), so the opt-in is for the whole app.
+        disable += "UnsafeOptInUsageError"
     }
 }
 
@@ -78,4 +81,5 @@ dependencies {
     implementation(libs.profileinstaller)       // the baseline profile, for installs that don't compile it themselves
 
     testImplementation(libs.junit)
+    testImplementation(libs.json)
 }

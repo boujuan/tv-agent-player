@@ -7,6 +7,7 @@ media3 = "1.11.1"
 okhttp = "5.5.1"
 profileinstaller = "1.4.1"
 junit = "4.13.2"
+json = "20260814"
 
 [libraries]
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
@@ -15,6 +16,8 @@ media3-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", 
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+# The JVM tests run against Android's API stubs; this is the real org.json in their place.
+json = { group = "org.json", name = "json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
