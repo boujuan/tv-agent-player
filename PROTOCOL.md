@@ -187,7 +187,7 @@ Events have no `id`. Each one about a file carries its `item`.
 | `video` | `decoder`, `mime`, `codecs`, `w`, `h`, `fps`, `hdr` (`dv`, `hdr10`, `hlg`, `sdr`; HDR10+ is metadata in each frame, not in the header, so an HDR10+ file says `hdr10`), `dv_profile`, `init_ms` (the decoder's start-up) | When the video decoder starts |
 | `audio` | `mime`, `ch`, `rate`, `out` (`passthrough` or `pcm`), `encoding`, `offload` | When the audio output starts |
 | `timing` | `ms`: `{"first_byte", "prepared", "first_frame", "ready"}` from the load's arrival; `bytes`, `requests`, `preloaded`, `cap_mb` (the buffer's byte cap) | Once per load, when it's ready and the picture has moved |
-| `error` | `code` (Media3's name, e.g. `ERROR_CODE_IO_BAD_HTTP_STATUS`), `http` (the status, if any), `message`, `fatal` | On errors. Messages never contain the link |
+| `error` | `code` (Media3's name, e.g. `ERROR_CODE_IO_BAD_HTTP_STATUS`; `LOAD_FAILED` for a read that failed and is being retried), `cause` (for `LOAD_FAILED`: the exception, e.g. `UnknownHostException`), `http` (the status, if any), `message`, `fatal` | A fatal one ends the file; a `LOAD_FAILED` (not fatal) comes once per file, at the first failed read. Messages never contain the link |
 | `ended` | `pos`, `dur` | At the end of the file |
 | `closed` | `pos`, `dur`, `why` (`stop`, `back`, `home`, `error`, `replaced`, `idle`) | The last word about an item: on `stop`, Back, leaving the screen, a fatal error, a `load` of something else, or a minute after the end with nothing loaded since (the screen then closes). Sent before the decoder is released |
 | `preloaded` | `ms` (how long it took) | When a `preload` is ready |

@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
 import androidx.media3.exoplayer.source.preload.PreloadException
 import androidx.media3.exoplayer.source.preload.PreloadManagerListener
 import org.json.JSONArray
+import java.io.IOException
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
@@ -138,6 +139,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         http.route(url, headers(cmd), stackOf(cmd))
         stats = Http.Stats(url, now).also { http.stats = it }
         preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
+        loadErrorSent = false
         external.clear()
         host.onCues(emptyList())
         bitrateKnown = cmd.optLong("bitrate", 0) > 0
@@ -513,6 +515,25 @@ class Engine(private val context: Context, private val host: Host) : Player.List
                                mediaLoadData: MediaLoadData, retryCount: Int) {
         if (seekAt > 0) loadsSinceSeek++
     }
+
+    /**
+     * A read that failed and will be retried: told to the agent once per file (`fatal` false), so it can say why on
+     * the TV now rather than after Media3's retries (a name the TV can't look up waits ~30 s to become fatal).
+     */
+    override fun onLoadError(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
+                             mediaLoadData: MediaLoadData, error: IOException, wasCanceled: Boolean) {
+        val it = item ?: return
+        if (wasCanceled || loadErrorSent) return
+        loadErrorSent = true
+        val cause = generateSequence<Throwable>(error) { e -> e.cause }.last()
+        val http = generateSequence<Throwable>(error) { e -> e.cause }
+            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>().firstOrNull()?.responseCode
+        Log.w(TAG, "load error ${cause.javaClass.simpleName}${http?.let { c -> " (HTTP $c)" } ?: ""}")
+        host.send(msg("error", "item" to it.id, "code" to "LOAD_FAILED", "cause" to cause.javaClass.simpleName,
+            "http" to http, "message" to scrub(cause.message ?: cause.javaClass.simpleName), "fatal" to false))
+    }
+
+    private var loadErrorSent = false
 
     // Media3 starts the decoder before it reports the format that made it: whichever comes second sends `video`.
     override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,

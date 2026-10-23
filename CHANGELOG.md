@@ -3,6 +3,17 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.1.1 — 2026-10-24
+
+### Fixed
+- Holding ← or → on the remote jumps once per press and then once every half second, instead of on every repeat of
+  the key (~20 a second): held for a few seconds, it had run 25 minutes ahead.
+
+### Added
+- A read of the file that fails (and is retried) is reported to the agent at once, as a non-fatal `error` with
+  `code` `LOAD_FAILED` and its `cause` (e.g. `UnknownHostException`: the TV couldn't look up the server's name), so
+  the agent can say why on the TV instead of a silent wait. Once per file.
+
 ## 0.1.0 — 2026-10-24
 
 The first release. Needs the tv-agent voice agent from its main branch (after server 0.4.0), with `player = "tvplayer"`.

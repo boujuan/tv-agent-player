@@ -211,8 +211,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> if (event.repeatCount == 0) engine.toggle()
             KeyEvent.KEYCODE_MEDIA_PLAY -> engine.play()
             KeyEvent.KEYCODE_MEDIA_PAUSE -> engine.pause()
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> engine.seekBy(-10_000, null)
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> engine.seekBy(30_000, null)
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> jump(event, -10_000)
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> jump(event, 30_000)
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> {}
             KeyEvent.KEYCODE_MEDIA_NEXT -> key("next")
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> key("previous")
@@ -225,6 +225,19 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         showBar(BAR_MS)
         return true
     }
+
+    /**
+     * A jump per press, and while the key is held one more every HELD_STEP_MS: the remote repeats a held key ~20
+     * times a second, and a jump each time ran half an hour ahead in a few seconds (found 2026-10-24).
+     */
+    private fun jump(event: KeyEvent, ms: Long) {
+        val now = event.eventTime
+        if (event.repeatCount > 0 && now - lastJumpAt < HELD_STEP_MS) return
+        lastJumpAt = now
+        engine.seekBy(ms, null)
+    }
+
+    private var lastJumpAt = 0L
 
     // ---- Session.Actions (media keys while the pill or a list is in front) ----
 
@@ -287,6 +300,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         private const val TAG = "Player"
         private const val BAR_MS = 4_000L
         private const val IDLE_MS = 60_000L
+        private const val HELD_STEP_MS = 500L
 
         fun clock(ms: Long): String {
             val s = ms / 1000
