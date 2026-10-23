@@ -72,7 +72,8 @@ A wins on every row except the one B gets free (no token). With A, the link is n
 unencrypted on the network. Today Just Player gets it in an `am start -d` command line, and Kodi's JSON-RPC is
 plain HTTP.
 
-How the pieces reach the app: `tv-agent tv pair` sends the agent's LAN address, `player_port`, the player token and
+How the pieces reach the app: `tv-agent tv pair` sends the agent's addresses (the LAN's first, then its Tailscale
+address, so the player finds the agent when the computer is away from home), `player_port`, the player token and
 the certificate's SHA-256 in one broadcast to `PairReceiver`. Only the shell can send it (the receiver needs the
 `DUMP` permission, as the TV app's pairing does). The player token is the player's own, not the TV app's
 `agent_token`: neither app's secret works for the other's endpoints.

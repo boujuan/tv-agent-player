@@ -7,8 +7,9 @@ One section per release, newest first; each `## X.Y.Z` section becomes that tag'
 
 ### Added
 - The design ([DESIGN.md](DESIGN.md)) and the control protocol, version 1 ([PROTOCOL.md](PROTOCOL.md)).
-- Pairing with tv-agent: `PairReceiver` takes the agent's address, the player port, the player token and the
-  agent certificate's SHA-256 from `tv-agent tv pair` (shell only).
+- Pairing with tv-agent: `PairReceiver` takes the agent's addresses in the order to try (the home network's, then
+  e.g. Tailscale's), the player port, the player token and the agent certificate's SHA-256 from `tv-agent tv pair`
+  (shell only). The player tries the address that answered last first.
 - Builds for the TV: Kotlin, Media3 1.11.1 (pinned), Android 14 and newer, `armeabi-v7a`, R8; CI and a signed
   release workflow.
 - The player: the agent's TLS link (certificate pinned, token, reconnects by itself); `load` in place with headers

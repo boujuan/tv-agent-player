@@ -10,8 +10,10 @@ Why this shape, and the alternatives considered, are in [DESIGN.md](DESIGN.md#co
 
 ## Connection
 
-- **Direction**: the player connects to the agent, at the address and port it got at pairing (`player_port`,
-  8770 by default). The TV listens on nothing.
+- **Direction**: the player connects to the agent, at the addresses and port it got at pairing (`player_port`,
+  8770 by default). The addresses come in the order to try: the agent's on the home network first, then others
+  such as its Tailscale address for when the computer is away. The player tries the one that answered last first,
+  and gives each 2 s to answer. The TV listens on nothing.
 - **TLS** 1.3, with the agent's certificate pinned by the SHA-256 of its DER encoding, also from pairing. The host
   name isn't checked (the certificate is self-signed; the pin is the check). It's the certificate the agent already
   uses for paired phones.

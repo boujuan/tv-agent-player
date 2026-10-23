@@ -141,15 +141,36 @@ class Link(private val pairing: Pairing, private val version: String, private va
         }
     }
 
+    /**
+     * The first of the agent's addresses that answers, starting with the one that did last time: the home network's
+     * when the computer is home, else another (Tailscale) when it's away.
+     */
     private fun connect(): SSLSocket {
+        var failure: IOException? = null
+        for (host in order(pairing.hosts, lastHost)) {
+            try {
+                return connect(host).also { lastHost = host }
+            } catch (e: IOException) {
+                failure = e
+            }
+        }
+        throw failure ?: IOException("no address")
+    }
+
+    private fun connect(host: String): SSLSocket {
         val raw = Socket()
         raw.tcpNoDelay = true
         raw.keepAlive = true
-        raw.connect(InetSocketAddress(pairing.host, pairing.port), CONNECT_TIMEOUT_MS)
+        try {
+            raw.connect(InetSocketAddress(host, pairing.port), CONNECT_TIMEOUT_MS)
+        } catch (e: IOException) {
+            closeQuietly(raw)
+            throw e
+        }
         raw.soTimeout = SILENCE_MS
         val tls = SSLContext.getInstance("TLS")
         tls.init(null, arrayOf(Pin(pairing.certSha256)), null)
-        val s = tls.socketFactory.createSocket(raw, pairing.host, pairing.port, true) as SSLSocket
+        val s = tls.socketFactory.createSocket(raw, host, pairing.port, true) as SSLSocket
         s.enabledProtocols = s.supportedProtocols.filter { it == "TLSv1.3" || it == "TLSv1.2" }.toTypedArray()
         s.startHandshake()
         return s
@@ -170,14 +191,20 @@ class Link(private val pairing: Pairing, private val version: String, private va
 
     companion object {
         const val PROTOCOL = 1
+        /** The agent's address that answered last, for this process (it lives on between screens). */
+        @Volatile private var lastHost: String? = null
         private const val TAG = "AgentLink"
-        private const val CONNECT_TIMEOUT_MS = 3_000
+        private const val CONNECT_TIMEOUT_MS = 2_000      // per address: one that isn't there costs this much
         private const val SILENCE_MS = 30_000          // nothing at all from the agent for this long: dead
         private const val PING_MS = 10_000L
         private const val FIRST_RETRY_MS = 500L
         private const val MAX_RETRY_MS = 10_000L
         private const val REFUSED_RETRY_MS = 30_000L
         const val MAX_LINE = 4 shl 20
+
+        /** The addresses to try: the one that answered last first, then the rest in the pairing's order. */
+        fun order(hosts: List<String>, last: String?): List<String> =
+            if (last != null && last in hosts) listOf(last) + (hosts - last) else hosts
 
         fun sha256(bytes: ByteArray): String =
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
