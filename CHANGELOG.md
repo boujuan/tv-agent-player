@@ -23,3 +23,9 @@ One section per release, newest first; each `## X.Y.Z` section becomes that tag'
   (40 s ahead, 12 s behind, within what the TV can spare); the decoder lists warmed while the screen comes up.
 - Android's media session (the remote's media keys, `dumpsys media_session`), and the remote on the player: OK
   pauses, left and right jump −10 s / +30 s, Back stops; a time bar.
+- Tuned on the TV (measurements in DESIGN.md): Android 14's built-in Cronet (HttpEngine) for links, chosen over
+  HttpURLConnection and OkHttp with `bench` (one connection for the header, the seek index and the seeks); the
+  buffer's memory follows each file, also when one is loaded over another, and goes back to Android at once when
+  the player closes; audio in your language prefers the file's main track (default flag, channels, codec); a ping
+  from the player when nothing plays. Command to first frame 1.3 s (Just Player 2.9 s, Kodi 2.4 s), a preloaded
+  next episode 0.1 s.

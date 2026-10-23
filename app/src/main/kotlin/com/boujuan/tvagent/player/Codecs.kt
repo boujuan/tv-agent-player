@@ -50,6 +50,10 @@ object Codecs {
     fun dvProfile(f: Format): Int? =
         if (f.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION) f.codecs?.split('.')?.getOrNull(1)?.toIntOrNull() else null
 
+    /** A text track's own type: Media3 parses subtitles while reading the file, and then names them its cues. */
+    fun original(f: Format): String? =
+        if (f.sampleMimeType == MimeTypes.APPLICATION_MEDIA3_CUES) f.codecs else f.sampleMimeType
+
     fun codec(mime: String?): String? = when (mime) {
         MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC -> "eac3"
         MimeTypes.AUDIO_AC3 -> "ac3"

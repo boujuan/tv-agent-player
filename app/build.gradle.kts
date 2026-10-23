@@ -76,8 +76,6 @@ android {
 dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)              // SubtitleView and AspectRatioFrameLayout only; R8 drops the rest
-    implementation(libs.media3.okhttp)          // one of the HTTP stacks `bench` compares (DESIGN.md)
-    implementation(libs.okhttp)
     implementation(libs.profileinstaller)       // the baseline profile, for installs that don't compile it themselves
 
     testImplementation(libs.junit)

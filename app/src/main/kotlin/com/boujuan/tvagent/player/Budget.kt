@@ -37,10 +37,22 @@ object Budget {
  * Media3's DefaultLoadControl (time thresholds, the back buffer, per-player accounting, the preload's own budget)
  * with a byte cap that follows each file's bitrate: DefaultLoadControl's own byte targets are fixed when it's built.
  */
-class Loading private constructor(private val inner: DefaultLoadControl) : LoadControl {
+class Loading private constructor(private val inner: DefaultLoadControl, private val allocator: DefaultAllocator) :
+    LoadControl {
     /** The playing file's cap, set per load (Budget.bytes). */
     @Volatile var cap: Long = Budget.CEILING.toLong()
+        set(value) {
+            field = value
+            fit()
+        }
     @Volatile private var playing: Allocator? = null      // the player's own share of the allocator
+
+    /**
+     * The allocator keeps freed blocks for reuse up to its target, which DefaultLoadControl sets to its own most:
+     * after a big file, a small one loaded in place would keep the big one's blocks. So the target follows the
+     * cap, after each of DefaultLoadControl's own updates.
+     */
+    private fun fit() = allocator.setTargetBufferSize((cap + Budget.PRELOAD).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
 
     override fun getAllocator(playerId: PlayerId): Allocator =
         inner.getAllocator(playerId).also { if (playerId != PlayerId.PRELOAD) playing = it }
@@ -51,11 +63,23 @@ class Loading private constructor(private val inner: DefaultLoadControl) : LoadC
         return going && (playing?.totalBytesAllocated ?: 0) < cap
     }
 
-    override fun onPrepared(playerId: PlayerId) = inner.onPrepared(playerId)
+    override fun onPrepared(playerId: PlayerId) {
+        inner.onPrepared(playerId)
+        fit()
+    }
+
     override fun onTracksSelected(
         parameters: LoadControl.Parameters, trackGroups: TrackGroupArray, trackSelections: Array<out ExoTrackSelection?>,
-    ) = inner.onTracksSelected(parameters, trackGroups, trackSelections)
-    override fun onStopped(playerId: PlayerId) = inner.onStopped(playerId)
+    ) {
+        inner.onTracksSelected(parameters, trackGroups, trackSelections)
+        fit()
+    }
+
+    override fun onStopped(playerId: PlayerId) {
+        inner.onStopped(playerId)
+        fit()
+    }
+
     override fun onReleased(playerId: PlayerId) = inner.onReleased(playerId)
     override fun getBackBufferDurationUs(playerId: PlayerId) = inner.getBackBufferDurationUs(playerId)
     override fun retainBackBufferFromKeyframe(playerId: PlayerId) = inner.retainBackBufferFromKeyframe(playerId)
@@ -66,14 +90,16 @@ class Loading private constructor(private val inner: DefaultLoadControl) : LoadC
 
     companion object {
         /** One control for the player and the preload: one allocator, so one budget in memory. */
-        fun build() = Loading(
-            DefaultLoadControl.Builder()
-                .setAllocator(DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE))
+        fun build(): Loading {
+            val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
+            return Loading(DefaultLoadControl.Builder()
+                .setAllocator(allocator)
                 .setBufferDurationsMs(Budget.MIN_FORWARD_MS, Budget.FORWARD_MS, Budget.START_MS, Budget.RESTART_MS)
                 .setBackBuffer(Budget.BACK_MS, true)
                 .setTargetBufferBytes(Budget.CEILING)                         // the most; `cap` is the file's
                 .setPlayerTargetBufferBytes(PlayerId.PRELOAD.name, Budget.PRELOAD)
                 .setPrioritizeTimeOverSizeThresholds(false)
-                .build())
+                .build(), allocator)
+        }
     }
 }

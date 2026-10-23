@@ -27,7 +27,8 @@ research report *Kodi alternatives for Android TV*. Where the two differ, the te
 | Native code | **None** | Decoding is in hardware, sound goes out as bitstream, and TLS is already native (Conscrypt/BoringSSL). See [below](#native-code) |
 | UI | Platform `Activity`, **Views**, a **SurfaceView** | DV and HDR need the video on the hardware overlay plane, which only a SurfaceView gives. No Compose, AppCompat or AndroidX activity: less to load at start, and nothing to draw beyond a time bar |
 | Media session | The **platform** `MediaSession` | Media keys, Google TV and `dumpsys media_session` all work with it. `media3-session` (a 954 KB AAR, more than half the size of the 1.7 MB player engine) would be loaded for the same thing |
-| Shrinking and compiling | R8 full mode with resource shrinking; a **baseline profile** in the APK, compiled at install (`speed-profile`) | Startup code runs compiled from the first launch instead of interpreted. Measured against a plain install and `cmd package compile -m speed` in step 4 |
+| Shrinking and compiling | R8 full mode with resource shrinking (a 1.14 MB APK); **compiled ahead of time at install** (`tv-agent tv install` runs `cmd package compile -m speed`: 5.5 s, once) | Reading a file's header measured ~0.2 s faster than interpreted. The TV ignores a profile inside a sideloaded APK (it installs as `verify`), so the compile is explicit; the APK's baseline profile still reaches Android through profileinstaller for its idle-time compile |
+| HTTP | **Android 14's built-in Cronet** (`HttpEngine`), HttpURLConnection as the fallback; no OkHttp | Measured against debrid links ([below](#measured-on-the-tv)): one connection for the header, the seek index and the seeks, so starts 0.3–0.7 s faster and seeks steady at ~230 ms where HttpURLConnection took 0.25–1.6 s. Nothing added to the APK |
 | ABI | `armeabi-v7a`, the only one this userspace runs | There's no native code, so the APK has no `.so` files to choose between anyway |
 | Control | **TLS socket from the player to the agent**, newline JSON, token from pairing, agent certificate pinned | [Below](#control-channel); the protocol is in [PROTOCOL.md](PROTOCOL.md) |
 | Where it runs | Its **own app** (`com.boujuan.tvagent.player`) and process | Its own Java heap (the buffer is the big user), its own task (the voice pill over it only pauses it), and a player crash can't take the microphone down |
@@ -50,8 +51,9 @@ Nothing on this player's hot path would get faster in C++:
   of a millisecond of CPU per second of video.
 
 Against that, a native pipeline would mean rewriting what Media3 gets right on this TV: DV decoder choice,
-audio/video sync, passthrough, subtitles. Just Player, on the same Media3, played the 55 Mbit/s P7 REMUX for 250 s
-with 5 dropped frames, during seeks (the tests). Step 4 checks the CPU use (`top`) during that file to confirm.
+audio/video sync, passthrough, subtitles. Measured: the whole player takes 17–19 % of one of the four cores while
+a 25 Mbit/s WEB-DL plays, ~40–60 % while the 55 Mbit/s REMUX fills its buffer at ~100 Mbit/s, and drops 0–2 frames a
+session outside seeks.
 
 ## Control channel
 
@@ -89,14 +91,79 @@ warm, **5.8 s** cold. The time goes to these, and here's what this player does a
 |---|---|
 | Process start and activity (0.5–0.7 s for Just Player, always cold because of `-S`; 3.1 s for a cold Kodi) | Started during the stream lookup, so off the critical path. A second title replaces the first in place: no relaunch, no home-screen flash between titles (test 4) |
 | Building the player and listing decoders (MediaCodecList queries can take hundreds of ms) | Done in `onCreate` before the link arrives; the decoder lists for DV, HEVC, AVC, AV1 and the audio formats are fetched on a background thread into Media3's per-process cache |
-| Three HTTP requests before the first frame: the MKV header, its Cues (near the end of the file), back to the start position | Unavoidable for an MKV. With an HTTP/2 stack the three share one TLS connection instead of three handshakes. Which stack wins is measured on the TV with `bench` (the platform's `HttpURLConnection`, Android 14's built-in Cronet `HttpEngine`, OkHttp 5), not assumed |
-| Decoding from the keyframe before the start position (Media3 always starts a file exactly where it's told) | Measured: a start at 0 against one mid-file |
-| `bufferForPlaybackMs` (Media3's default 1 s before starting) | Measured at 0.5–1 s; this Wi-Fi isn't the limit |
-| The next episode in binge mode | `preload` while the credits roll: header, Cues and the first seconds are already in memory, so the next one starts at decoder speed |
+| Three HTTP requests before the first frame: the MKV header, its Cues (near the end of the file), back to the start position | Unavoidable for an MKV. Android's built-in Cronet keeps one connection for all three instead of a handshake each: chosen by measurement ([below](#measured-on-the-tv)) over HttpURLConnection and OkHttp |
+| Decoding from the keyframe before the start position (Media3 always starts a file exactly where it's told) | No consistent cost measured: The Boys S04E03 from 0:00 showed its first frame 2.30 s after the command, S04E01 from 10:00 and 40:00 2.18 s and 2.50 s (player's own event). Left exact |
+| `bufferForPlaybackMs` (Media3's 1 s buffered before playing) | Kept: playing starts 0.15–0.4 s after the first frame, since the CDN delivers ~4× a WEB-DL's bitrate, so a lower threshold gains little and risks a rebuffer right after the start |
+| The next episode in binge mode | `preload` while the credits roll: header, Cues and the first seconds are already in memory, so the next one starts at decoder speed (measured: 0.10 s) |
 | Seeks | Forward and back buffers in memory, so ±10–30 s jumps stay inside them: no HTTP request, only a decoder flush. Fast `seek_by` commands add up into one seek |
 
-What step 4 measures, against the baselines: command to first frame (cold process, warm process, preloaded), seek
-to first frame (inside and outside the buffer), memory (PSS) while playing 4K DV, and CPU during the REMUX.
+## Measured on the TV
+
+2026-10-23, release build 0.1.0 compiled ahead of time, driven over its connection (no agent play, nothing written to
+Stremio), the same files as the tests, links already resolved. "First frame" is the panel's own marker (`VIDEOFUNC …
+FirstFrame = 1`) after the command, as in the tests; the TV's clock was 0.075 s ahead of the laptop's and is
+corrected for. The marker only appears when the TV sets up a picture path (a new HDR mode), so loads of the same
+format back to back have only the player's own first-frame event, which comes 0.15–0.5 s after the panel's.
+
+**Start** (command → first frame on the panel; the player was started during the stream lookup, as the agent does):
+
+| File | This player | Just Player 0.217 | Kodi 22 RC1 |
+|---|---|---|---|
+| B: DV P8.1 + HDR10+ WEB-DL, 25 Mbit/s, from 30:00 | **1.30–1.36 s** (3 runs) | 2.9 s | 2.4 s warm, 5.8 s cold |
+| A: DV hybrid WEBRip, 5.5 Mbit/s, loaded over B | 1.52–1.61 s | — | — |
+| C: DV P7 FEL REMUX, 55 Mbit/s, TrueHD 7.1 | 2.57 s | — | — |
+| D: DV P5 MP4 (its index is at the start: 47 MB in 19 requests first) | 15.6 s | 22 s | — |
+| E: DV P8, DTS-HD MA | 2.70 s | (2.6 s hold before audio) | — |
+| F: HDR10+ WEB-DL | 1.76 s | — | — |
+| The next episode, preloaded (`preloaded` 2.6 s after `preload`) | **0.10 s** (player's own first frame; ready at 0.14 s) | — | — |
+
+- The screen comes up and connects 0.23–0.33 s after `am start` from a cold process (`am start -W` TotalTime 286–326 ms
+  whether compiled or not), during the agent's 3–6 s stream lookup.
+- Every file showed the right mode: DV for A–E (`c2.mtk.dvhe.st` for P8, `c2.mtk.dvhe.stn` for P5 and P7), HDR10+ for
+  F (`c2.mtk.hevc`). Sound went out as bitstreams: E-AC3, TrueHD, DTS-HD. The TV left HDR 0.06 s after `stop`.
+
+**HTTP stacks** (`bench` on file B's and file C's links; three runs, medians):
+
+| | First byte | Throughput | Seek: request open | Seek: open + 1 MB |
+|---|---|---|---|---|
+| HttpEngine (Cronet) | 299–316 ms | 83–108 Mbit/s | **221–234 ms**, spread ±25 ms | **453–504 ms** |
+| HttpURLConnection | 243–313 ms | 84–120 Mbit/s | 274–945 ms, up to 1.56 s | 551–1234 ms |
+| OkHttp 5 | 305–354 ms | 97–104 Mbit/s | 254–267 ms | 522–530 ms |
+
+Throughput is the debrid CDN's (~100 Mbit/s), not the TV's Wi-Fi (780–866 Mbit/s link). In whole loads of B,
+HttpEngine's first frame came 0.3–0.7 s sooner than HttpURLConnection's (1.58–1.67 s against 1.88–2.38 s, player's own
+event), with one request fewer.
+
+**Seeks** (command → next picture):
+
+| | 25 Mbit/s WEB-DL (B) | 55 Mbit/s REMUX (C) |
+|---|---|---|
+| +30 s or −10 s inside the buffer | **0.11–0.12 s** | (C's buffer holds ~26 s and was refilling) |
+| Outside the buffer, nearest keyframe | 0.68 s (+60 s); 0.90 s (three +30 s merged into +90) | 0.47–0.93 s |
+| Exact jump outside the buffer | 1.45 s | 1.45–1.78 s |
+| 20 alternating ±10 s in a burst | — | merged; one picture after 0.47–0.73 s, then plays on |
+
+Just Player needed a relaunch for any exact jump (3.5 s in the tests) and buffered 1–4 s after key bursts.
+
+**Memory** (PSS 35–75 s into playback; Just Player 208 MB and Kodi 277 MB playing B):
+
+| File | Buffer cap | PSS | Java heap |
+|---|---|---|---|
+| B (25 Mbit/s) | 156 MB | 170–204 MB | 142–175 MB |
+| A (5.5 Mbit/s), loaded over B | 34 MB | 105 MB | 76 MB |
+| C REMUX (55 Mbit/s) | 179–201 MB | 228–263 MB | 202–230 MB |
+| D P5 MP4 (8 audio, 76 text tracks: its sample tables) | 156 MB | 312 MB* | 285 MB* |
+| Between plays (cached, Android may drop it) | — | **30 MB** | 3.5 MB |
+
+\* Before the allocator fix below; not measured again.
+
+- First finding: in place, a small file kept the big one's freed blocks (204 MB PSS for A after B). Fixed: the
+  allocator's target follows each file's cap, and a collection runs once the old file has gone (105 MB).
+- Second: after `stop` the runtime only gave the memory back ~30 s later; the player now collects as it releases.
+
+**Smoothness** (`dumpsys media.metrics`, written by Android per decoder session): 23.8–24.4 fps in every session,
+0–2 dropped frames and at most one freeze (83–208 ms) per session; the REMUX session with seven seeks dropped 10.
+Just Player 0.217 in the tests: 4–9 dropped, up to 2 freezes of 224 ms.
 
 ## Memory
 
@@ -106,11 +173,13 @@ from the file's bitrate instead, within a budget:
 
 - **Budget**: the smaller of 256 MB, 45 % of the heap limit (`largeHeap`: 512 MB), and 35 % of the memory Android
   says is available when the file loads.
-- **Forward**: 40 s, within the budget. A 5–25 Mbit/s WEB-DL needs 25–125 MB; a REMUX hits the 256 MB budget at
-  ~30 s.
-- **Back**: 15 s kept from the last keyframe, inside the same budget, so "back 10 seconds" doesn't touch the network.
-- A WEB-DL should therefore come in under Just Player's 208 MB; a REMUX trades memory for seconds of buffer. Step 4
-  measures both.
+- **Forward**: 40 s (loading starts again below 30 s), so "skip 30 seconds", the agent's default, lands inside it.
+- **Back**: 12 s kept from the last keyframe, so "back 10 seconds" doesn't touch the network.
+- The cap is the file's bitrate × 52 s within the budget: 34 MB for a 5.5 Mbit/s WEB-DL, 156 MB at 25 Mbit/s, ~200 MB
+  for a REMUX (~26 s). Without a bitrate from the agent, the player works it out from the file's size and length.
+- Measured ([above](#measured-on-the-tv)): 105–204 MB for WEB-DLs, ~230–260 MB for the REMUX. Inside-the-buffer jumps
+  take ~0.1 s against 0.7–1.5 s from the network, which is worth more to voice control than the ~25 MB over Just
+  Player at the top of the range.
 - Between plays the process holds no player, so it's only Android's cached app, and Android can drop it at any time.
   Kodi keeps 130 MB resident.
 
@@ -133,7 +202,9 @@ The rules are the agent's (`languages.py`), applied by the player when it first 
 already has the right ones: no switch after the start, and no recheck eight seconds later as with Kodi.
 
 - **Audio**: the `audio` language; never a commentary or audio-description track (by name, since Media3 reads no
-  MKV role flags); Castilian before Latin American Spanish; Simplified vs Traditional Chinese by name.
+  MKV role flags); Castilian before Latin American Spanish; Simplified vs Traditional Chinese by name; then the
+  track the file marks default (a release's main one), the most channels, the better codec, as Kodi and Just Player
+  would. Oppenheimer (TheBiscuitMan) lists E-AC3 first and its default DTS-HD MA second: it plays the DTS-HD.
 - **Subtitles on**: the first `subs` language with a full (not forced) track; plain before SDH; Castilian first.
 - **Subtitles off**: a forced track in the audio's language still shows, since it translates lines in other
   languages. In Dune Part Two's WEB-DL the Chakobsa lines are exactly such a track (the tests).

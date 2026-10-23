@@ -2,6 +2,7 @@ package com.boujuan.tvagent.player
 
 import androidx.media3.common.C
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Util
 
 /**
@@ -50,11 +51,27 @@ object Lang {
     private fun isLatin(f: Format, want: String): Boolean =
         code(want) == "es" && (LATIN.containsMatchIn(f.label.orEmpty()) || f.language?.lowercase() == "es-419")
 
-    /** The track in that language, not a commentary or audio description; Castilian before Latin American. */
+    /**
+     * The track in that language, not a commentary or audio description; Castilian before Latin American; then the
+     * one the file marks default (a release's main track), the most channels, the better codec, as Kodi and Just
+     * Player would.
+     */
     fun pickAudio(tracks: List<Format>, want: String): Int? =
         tracks.indices.filter { matches(tracks[it], want) }
-            .sortedWith(compareBy({ isExtraAudio(tracks[it]) }, { isLatin(tracks[it], want) }))
+            .sortedWith(compareBy<Int>({ isExtraAudio(tracks[it]) }, { isLatin(tracks[it], want) },
+                { tracks[it].selectionFlags and C.SELECTION_FLAG_DEFAULT == 0 }, { -tracks[it].channelCount },
+                { -codecRank(tracks[it].sampleMimeType) }))
             .firstOrNull()
+
+    private fun codecRank(mime: String?): Int = when (mime) {
+        MimeTypes.AUDIO_TRUEHD -> 6
+        MimeTypes.AUDIO_DTS_HD, MimeTypes.AUDIO_DTS_X -> 5
+        MimeTypes.AUDIO_E_AC3_JOC -> 4
+        MimeTypes.AUDIO_E_AC3 -> 3
+        MimeTypes.AUDIO_DTS -> 2
+        MimeTypes.AUDIO_AC3 -> 1
+        else -> 0
+    }
 
     /** The first language that has a full (not forced) track; plain before SDH; Castilian before Latin American. */
     fun pickText(tracks: List<Format>, wants: List<String>): Int? {

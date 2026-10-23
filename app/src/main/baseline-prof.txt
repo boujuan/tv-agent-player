@@ -1,0 +1,6 @@
+# Compiled ahead of time at install (the TV installs with speed-profile): all of this app and of Media3, which is
+# nearly all the code there is. Measured on the TV: reading a file's header ~0.2 s faster than interpreted (DESIGN.md).
+HSPLcom/boujuan/tvagent/player/**->**(**)**
+HSPLandroidx/media3/**->**(**)**
+Lcom/boujuan/tvagent/player/**;
+Landroidx/media3/**;

@@ -24,6 +24,17 @@ class LangTest {
     }
 
     @Test
+    fun theReleasesMainTrackAmongTheLanguagesOwn() {
+        fun a(mime: String, ch: Int, flags: Int = 0) = Format.Builder().setLanguage("eng").setSampleMimeType(mime)
+            .setChannelCount(ch).setSelectionFlags(flags).build()
+        // Oppenheimer (TheBiscuitMan): E-AC3 first, the default DTS-HD MA second
+        val opp = listOf(a("audio/eac3", 6), a("audio/vnd.dts.hd", 6, C.SELECTION_FLAG_DEFAULT), t("hin"))
+        assertEquals(1, Lang.pickAudio(opp, "eng"))
+        assertEquals(1, Lang.pickAudio(listOf(a("audio/ac3", 6), a("audio/true-hd", 8)), "eng"))     // more channels
+        assertEquals(1, Lang.pickAudio(listOf(a("audio/ac3", 6), a("audio/eac3", 6)), "eng"))        // better codec
+    }
+
+    @Test
     fun neverCommentaryByDefault() {
         val tracks = listOf(t("eng", "Director's Commentary"), t("eng", "English Atmos"), t("eng", "Audio Description"))
         assertEquals(1, Lang.pickAudio(tracks, "eng"))

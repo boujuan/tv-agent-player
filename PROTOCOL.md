@@ -29,9 +29,9 @@ Why this shape, and the alternatives considered, are in [DESIGN.md](DESIGN.md#co
   `"version"`) and closes.
 - **One player at a time**: a new authenticated connection replaces the old one, which gets
   `{"t": "bye", "error": "replaced"}`.
-- **Liveness**: `pos` comes every second while playing and every 10 s otherwise; the agent sends `{"t": "ping"}`
-  after 10 s without sending anything else (the player doesn't answer it). So there's always traffic both ways,
-  and either side treats 30 s of silence as a dead connection.
+- **Liveness**: each side sends `{"t": "ping"}` after 10 s without sending anything else (nobody answers it; while
+  something plays, the player's `pos` every second is traffic enough). Either side treats 30 s of silence as a dead
+  connection.
 - **Reconnecting**: if the connection drops while the screen is up, the player goes on playing and retries after
   0.5, 1, 2, 4… s, at most 10 s apart. After the new `welcome` it sends `state`, `pos` and `tracks` again, so the
   agent catches up.
@@ -68,7 +68,7 @@ except `bench`. Commands are applied in the order they arrive.
 | `audio` | ISO 639-2 language for the audio (`eng`, `spa`, `chs`/`cht` for the two Chinese scripts). Commentary and audio-description tracks are never chosen by language. Absent or null: the file's default track |
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
 | `play` | `false` loads it paused. Default `true` |
-| `http` | `platform`, `httpengine` or `okhttp`: the HTTP stack for this link (for measuring; absent: the player's default) |
+| `http` | `httpengine` (the default: Android's built-in Cronet) or `platform` (HttpURLConnection): the HTTP stack for this link, for measuring |
 
 It replaces what's loaded in place: the screen stays, there's no relaunch. If a `preload` of the same `url` is
 ready, it's used. The answer comes as soon as loading has started; `first_frame` follows when the picture moves.
@@ -164,7 +164,7 @@ The answer has the fields of `state` and `pos`.
 ### `bench`: measure
 
 ```json
-{"t": "bench", "id": 12, "url": "https://…", "headers": {}, "stacks": ["platform", "httpengine", "okhttp"],
+{"t": "bench", "id": 12, "url": "https://…", "headers": {}, "stacks": ["platform", "httpengine"],
  "seconds": 8, "seeks": 6}
 ```
 

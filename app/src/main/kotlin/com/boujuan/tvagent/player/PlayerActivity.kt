@@ -88,6 +88,9 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         engine.release(why)
         session.release()
         link?.close()
+        // The buffer's blocks back to Android now, not once the runtime gets round to it (~30 s in the background):
+        // the next app (the screensaver's Dolby Vision, another player) wants that memory.
+        Thread({ Runtime.getRuntime().gc() }, "release-gc").start()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (!isFinishing) finish()
     }
@@ -111,6 +114,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         if (shut) return
         val id = cmd.opt("id")
         val t = cmd.optString("t")
+        if (engine.item == null) idleLater()            // the agent is still using the screen
         try {
             when (t) {
                 "load" -> {
@@ -136,6 +140,17 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
                 "volume" -> volume(cmd)
                 "status" -> return ack(id, null, engine.status())
                 "osd" -> say(cmd.optString("text").ifEmpty { null }, cmd.optLong("ms", 0))
+                "bench" -> {
+                    Thread({
+                        val result = try {
+                            Bench.run(engine.http, cmd)
+                        } catch (e: Exception) {
+                            null
+                        }
+                        main.post { ack(id, if (result == null) "bench failed" else null, result) }
+                    }, "bench").start()
+                    return
+                }
                 else -> return ack(id, "unknown command $t", null)
             }
             ack(id, null, null)

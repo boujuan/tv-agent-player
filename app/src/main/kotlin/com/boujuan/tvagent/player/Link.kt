@@ -3,6 +3,7 @@ package com.boujuan.tvagent.player
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import org.json.JSONException
 import org.json.JSONObject
@@ -43,6 +44,7 @@ class Link(private val pairing: Pairing, private val version: String, private va
     private val reader = Thread(::run, "agent-link")
     @Volatile private var socket: SSLSocket? = null
     @Volatile private var closing = false
+    @Volatile private var sentAt = 0L
     @Volatile var up = false
         private set
 
@@ -57,6 +59,7 @@ class Link(private val pairing: Pairing, private val version: String, private va
             try {
                 s.outputStream.write(line)
                 s.outputStream.flush()
+                sentAt = SystemClock.elapsedRealtime()
             } catch (e: IOException) {
                 Log.w(TAG, "write: ${e.javaClass.simpleName}")
                 closeQuietly(s)                 // the reader sees it and reconnects
@@ -64,8 +67,19 @@ class Link(private val pairing: Pairing, private val version: String, private va
         }
     }
 
+    // Nothing sent for PING_MS (nothing loaded, so no positions): a ping, so the agent doesn't take the silence for
+    // a dead connection.
+    private val ping = object : Runnable {
+        override fun run() {
+            if (!up || closing) return
+            if (SystemClock.elapsedRealtime() - sentAt >= PING_MS) send(JSONObject().put("t", "ping"))
+            main.postDelayed(this, PING_MS / 2)
+        }
+    }
+
     /** After what's queued has been written: no more reconnecting. */
     fun close() {
+        main.removeCallbacks(ping)
         closing = true
         writer.execute { socket?.let(::closeQuietly) }
         writer.shutdown()
@@ -95,7 +109,9 @@ class Link(private val pairing: Pairing, private val version: String, private va
                 up = true
                 wasUp = true
                 delay = FIRST_RETRY_MS
+                sentAt = SystemClock.elapsedRealtime()
                 main.post { listener.onUp() }
+                main.post(ping)
                 while (!closing) {
                     val line = readLine(input) ?: break
                     val cmd = try {
@@ -157,6 +173,7 @@ class Link(private val pairing: Pairing, private val version: String, private va
         private const val TAG = "AgentLink"
         private const val CONNECT_TIMEOUT_MS = 3_000
         private const val SILENCE_MS = 30_000          // nothing at all from the agent for this long: dead
+        private const val PING_MS = 10_000L
         private const val FIRST_RETRY_MS = 500L
         private const val MAX_RETRY_MS = 10_000L
         private const val REFUSED_RETRY_MS = 30_000L

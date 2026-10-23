@@ -13,24 +13,25 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpEngineDataSource
 import androidx.media3.datasource.TransferListener
-import androidx.media3.datasource.okhttp.OkHttpDataSource
-import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /**
- * The HTTP stacks a link can be read with, and each link's headers. Which stack is the default is decided by
- * measurement on the TV (`bench`, DESIGN.md), not assumed: the platform's HttpURLConnection, Android 14's built-in
- * Cronet (HttpEngine: HTTP/2 and QUIC, nothing added to the APK), or OkHttp (HTTP/2).
+ * The HTTP stacks a link can be read with, and each link's headers. The default was chosen by measuring on the TV
+ * against debrid links (`bench`, DESIGN.md): Android 14's built-in Cronet (HttpEngine) keeps one connection for the
+ * header, the seek index and every seek, so a start is 0.3-0.7 s faster and a seek's request opens in ~230 ms, where
+ * HttpURLConnection opens a new connection each time (~280 ms, up to 1.5 s). It adds nothing to the APK. OkHttp
+ * measured between the two and was dropped.
  */
 class Http(private val context: Context) {
-    enum class Stack { PLATFORM, HTTPENGINE, OKHTTP }
+    enum class Stack { PLATFORM, HTTPENGINE }
 
     private class Route(val headers: Map<String, String>, val stack: Stack)
 
     private val routes = ConcurrentHashMap<String, Route>()
-    @Volatile var stack = Stack.PLATFORM
+    /** Each link's whole size, from a read from its start (a preload's too), for its bitrate. */
+    val lengths = ConcurrentHashMap<String, Long>()
+    @Volatile var stack = Stack.HTTPENGINE
     val userAgent: String = Util.getUserAgent(context, "TVAgentPlayer")
 
     /** What the next reads of `url` send, and with which stack (null: the default). */
@@ -40,6 +41,7 @@ class Http(private val context: Context) {
 
     fun forget(url: String) {
         routes.remove(url)
+        lengths.remove(url)
     }
 
     private val platform by lazy {
@@ -57,16 +59,14 @@ class Http(private val context: Context) {
         return HttpEngineDataSource.Factory(engine, Executors.newFixedThreadPool(2)).setUserAgent(userAgent)
             .setConnectionTimeoutMs(TIMEOUT_MS).setReadTimeoutMs(TIMEOUT_MS)
     }
-    private val okhttp by lazy {
-        val client = OkHttpClient.Builder().connectTimeout(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
-            .readTimeout(TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS).build()
-        OkHttpDataSource.Factory(client).setUserAgent(userAgent)
-    }
-
     fun factory(stack: Stack): DataSource.Factory = when (stack) {
         Stack.HTTPENGINE -> if (hasEngine) engine else platform
-        Stack.OKHTTP -> okhttp
         Stack.PLATFORM -> platform
+    }
+
+    /** Cronet's native library loaded and its engine up before the first link (off the main thread). */
+    fun warmUp() {
+        if (hasEngine && stack == Stack.HTTPENGINE) Thread({ engine }, "http-warmup").start()
     }
 
     /** Counts for the playing file, for the `timing` event: requests, bytes, and when the first answer came. */
@@ -107,7 +107,9 @@ class Http(private val context: Context) {
             stats?.let(source::addTransferListener)
             current = source
             val headers = route?.headers.orEmpty()
-            return source.open(if (headers.isEmpty()) dataSpec else dataSpec.withAdditionalHeaders(headers))
+            val length = source.open(if (headers.isEmpty()) dataSpec else dataSpec.withAdditionalHeaders(headers))
+            if (dataSpec.position == 0L && length > 0) lengths[dataSpec.uri.toString()] = length
+            return length
         }
 
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int = current!!.read(buffer, offset, length)

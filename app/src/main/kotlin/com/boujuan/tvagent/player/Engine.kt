@@ -95,10 +95,14 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private var seekByTarget = C.TIME_UNSET
     private var seekByAt = 0L
     private var videoFormat: Format? = null
+    private var videoDecoder: String? = null
+    private var decoderInitMs = 0L
+    private var bitrateKnown = false
     private var audioFormat: Format? = null
     private var released = false
 
     init {
+        http.warmUp()
         player.addListener(this)
         player.addAnalyticsListener(this)
         preloads.addListener(object : PreloadManagerListener {
@@ -133,10 +137,11 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         item = it
         http.route(url, headers(cmd), stackOf(cmd))
         stats = Http.Stats(url, now).also { http.stats = it }
-        preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; audioFormat = null
+        preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
         external.clear()
         host.onCues(emptyList())
-        loading.cap = Budget.bytes(cmd.optLong("bitrate", 0), Runtime.getRuntime().maxMemory(), availableMemory())
+        bitrateKnown = cmd.optLong("bitrate", 0) > 0
+        cap(cmd.optLong("bitrate", 0))
         selector.plan = plan(cmd)
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
@@ -245,7 +250,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private fun track(i: Int, g: Tracks.Group, t: Int): JSONObject {
         val f = g.getTrackFormat(t)
         val o = JSONObject().put("i", i).put("lang", f.language ?: JSONObject.NULL).put("label", f.label ?: JSONObject.NULL)
-            .put("codec", Codecs.codec(f.sampleMimeType) ?: JSONObject.NULL)
+            .put("codec", Codecs.codec(Codecs.original(f)) ?: JSONObject.NULL)
             .put("default", f.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0).put("forced", Lang.isForced(f))
             .put("sdh", Lang.isSdh(f)).put("external", false).put("selected", g.isTrackSelected(t))
             .put("supported", g.isTrackSupported(t))
@@ -368,6 +373,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         released = true
         main.removeCallbacks(tick)
         main.removeCallbacks(subsTick)
+        main.removeCallbacks(collect)
         preloads.release()
         player.release()
         work.shutdownNow()
@@ -452,6 +458,12 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         val it = item ?: return
         if (tracks.isEmpty) return
         if (preparedMs < 0) preparedMs = SystemClock.elapsedRealtime() - it.loadedAt
+        // No bitrate from the agent: the file's size over its length, now that both are known (Budget).
+        val length = http.lengths[it.url] ?: -1
+        if (!bitrateKnown && length > 0 && player.duration > 0) {
+            bitrateKnown = true
+            cap(length * 8 * 1000 / player.duration)
+        }
         host.send(tracks().put("t", "tracks").put("item", it.id))
     }
 
@@ -502,18 +514,26 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         if (seekAt > 0) loadsSinceSeek++
     }
 
+    // Media3 starts the decoder before it reports the format that made it: whichever comes second sends `video`.
+    override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
+                                           initializedTimestampMs: Long, initializationDurationMs: Long) {
+        videoDecoder = decoderName
+        decoderInitMs = initializationDurationMs
+        videoFormat?.let(::sendVideo)
+    }
+
     override fun onVideoInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
                                            decoderReuseEvaluation: DecoderReuseEvaluation?) {
         videoFormat = format
+        if (videoDecoder != null) sendVideo(format)
     }
 
-    override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
-                                           initializedTimestampMs: Long, initializationDurationMs: Long) {
-        val f = videoFormat ?: return
-        Log.i(TAG, "video: $decoderName ${f.codecs} ${f.width}x${f.height} ${Codecs.hdr(f)} init ${initializationDurationMs} ms")
-        host.send(msg("video", "item" to item?.id, "decoder" to decoderName, "mime" to f.sampleMimeType,
+    private fun sendVideo(f: Format) {
+        val decoder = videoDecoder ?: return
+        Log.i(TAG, "video: $decoder ${f.codecs} ${f.width}x${f.height} ${Codecs.hdr(f)} init $decoderInitMs ms")
+        host.send(msg("video", "item" to item?.id, "decoder" to decoder, "mime" to f.sampleMimeType,
             "codecs" to f.codecs, "w" to f.width, "h" to f.height, "fps" to f.frameRate.toDouble(),
-            "hdr" to Codecs.hdr(f), "dv_profile" to Codecs.dvProfile(f), "init_ms" to initializationDurationMs))
+            "hdr" to Codecs.hdr(f), "dv_profile" to Codecs.dvProfile(f), "init_ms" to decoderInitMs))
     }
 
     override fun onAudioInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
@@ -529,6 +549,22 @@ class Engine(private val context: Context, private val host: Host) : Player.List
             "rate" to audioTrackConfig.sampleRate, "out" to out, "encoding" to Codecs.encoding(audioTrackConfig.encoding),
             "offload" to audioTrackConfig.offload))
     }
+
+    /**
+     * The buffer's cap for this file. A smaller one than the last file's frees blocks the runtime won't collect by
+     * itself while playing (the player allocates almost nothing new), so a collection follows once the old file
+     * has been let go.
+     */
+    private fun cap(bitrate: Long) {
+        val before = loading.cap
+        loading.cap = Budget.bytes(bitrate, Runtime.getRuntime().maxMemory(), availableMemory())
+        if (loading.cap < before - (32 shl 20)) {
+            main.removeCallbacks(collect)
+            main.postDelayed(collect, 4_000)
+        }
+    }
+
+    private val collect = Runnable { Thread({ Runtime.getRuntime().gc() }, "gc").start() }
 
     private fun availableMemory(): Long {
         val info = ActivityManager.MemoryInfo()
