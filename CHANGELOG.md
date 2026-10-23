@@ -3,7 +3,9 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
-## Unreleased
+## 0.1.0 — 2026-10-24
+
+The first release. Needs the tv-agent voice agent from its main branch (after server 0.4.0), with `player = "tvplayer"`.
 
 ### Added
 - The design ([DESIGN.md](DESIGN.md)) and the control protocol, version 1 ([PROTOCOL.md](PROTOCOL.md)).
