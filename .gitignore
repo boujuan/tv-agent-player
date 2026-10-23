@@ -1,0 +1,21 @@
+# Gradle and Android build output (can hold machine-specific files)
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+captures/
+*.apk
+*.aab
+# Signing keys never go in the repo (RELEASING.md)
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
+# Editors
+.idea/
+.vscode/
+*.iml
+*.swp
+.DS_Store

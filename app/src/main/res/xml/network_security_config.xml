@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Stream links are whatever the add-ons give (some are plain http, e.g. a proxy on the LAN). The agent's own
+     connection is TLS with a pinned certificate whatever this says (PROTOCOL.md). -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
+</network-security-config>

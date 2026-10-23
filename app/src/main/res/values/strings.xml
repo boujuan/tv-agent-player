@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Agent Player</string>
+    <string name="not_paired">Not paired with tv-agent: run `tv-agent tv pair` on the computer</string>
+    <string name="connecting">Connecting to tv-agent…</string>
+</resources>
