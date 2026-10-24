@@ -99,10 +99,11 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
         setBackgroundColor(0x4DFFFFFF)
     }
 
-    /**
-     * The remote while the bar is up: true when the controls took the key. With none picked only ↓ is theirs (it
-     * picks play/pause); ←/→ and OK then do what they do while playing.
-     */
+    /** Whether the controls take this key now (see the companion's); else it's the film's. */
+    fun takes(keyCode: Int, barShown: Boolean) =
+        takes(keyCode, barShown, picked = entry >= 0, open = menu?.open == true || subs?.open == true)
+
+    /** A key the controls take (`takes`): true when it was used. */
     fun onKey(keyCode: Int): Boolean {
         subs?.takeIf { it.open }?.let { return it.onKey(keyCode) }
         menu?.takeIf { it.open }?.let { m ->
@@ -213,6 +214,17 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
         ?: SubtitlePanel(subsStub.inflate(), engine, settings, host::sample, host::applied).also { subs = it }
 
     companion object {
+        private val ARROWS_AND_OK = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)
+
+        /**
+         * Who gets a key. The controls take the arrows and OK while one of them is picked or a list or the panel is
+         * open (←/→ then move between them and never seek), and ↓ while the bar is up (it picks play/pause).
+         * Everything else is the film's: with nothing picked ←/→ jump and OK plays or pauses; media keys always.
+         */
+        fun takes(keyCode: Int, barShown: Boolean, picked: Boolean, open: Boolean): Boolean =
+            keyCode in ARROWS_AND_OK && (open || picked || barShown && keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
+
         private val SPEEDS = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).toList()
         // AspectRatioFrameLayout's modes, as the Picture size list names them
         private val PICTURES = listOf(AspectRatioFrameLayout.RESIZE_MODE_FIT, AspectRatioFrameLayout.RESIZE_MODE_FILL,

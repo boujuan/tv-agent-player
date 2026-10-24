@@ -71,6 +71,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         title = findViewById(R.id.title)
         time = findViewById(R.id.time)
         progress = findViewById(R.id.progress)
+        progress.isFocusable = false                    // it takes ←/→ when focused (dispatchKeyEvent)
         barBadges = findViewById(R.id.bar_badges)
         bar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeSubtitles() }   // shown, hidden, or a row more or less
         settings = Settings(this)
@@ -369,8 +370,22 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
 
     // ---- the remote, while the player is in front ----
 
+    /**
+     * The remote's keys come here before any view. Media3's time bar is focusable and took ←/→ to move its own
+     * thumb, so with a control picked they moved the bar instead of the pick (0.6.0); no view gets them now.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode !in REMOTE_KEYS) return super.dispatchKeyEvent(event)
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> onKeyDown(event.keyCode, event)
+            KeyEvent.ACTION_UP -> onKeyUp(event.keyCode, event)
+        }
+        return true
+    }
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        if (bar.visibility == View.VISIBLE && controls.onKey(keyCode)) {
+        if (controls.takes(keyCode, bar.visibility == View.VISIBLE)) {
+            controls.onKey(keyCode)
             lastKeyAt = event.eventTime
             showBar(BAR_MS)
             return true
@@ -562,6 +577,12 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         private const val IDLE_MS = 60_000L
         private const val LET_GO_MS = 700L
         private const val PREVIEW_GAP_DP = 8
+        // The keys the player screen handles itself (dispatchKeyEvent); Back has its own callback
+        private val REMOTE_KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP, KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
         private val JUMP_KEYS = setOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
 

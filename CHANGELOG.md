@@ -3,6 +3,13 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.6.1 — 2026-10-24
+
+### Fixed
+- With a control picked under the bar, ← and → move between the controls again instead of moving the time bar's
+  thumb (Media3's time bar took the keys when focused). The player screen now takes the remote's keys before any
+  view, and which keys are the controls' and which the film's is tested.
+
 ## 0.6.0 — 2026-10-24
 
 ### Added
