@@ -198,6 +198,32 @@ For each HTTP stack, it measures the time to the first byte, the throughput over
 random offsets (each a new range request). Nothing is played. The answer has the numbers per stack. It can take a
 minute: no 2 s limit.
 
+### `thumb`: a picture of where a held ←/→ is going
+
+While ← or → is held, the player asks for a picture of the target on its bar with the event `thumb_req`, and the
+agent answers with this command. The agent makes the picture from the file: this TV can't decode a second 4K frame
+while the film plays ([DESIGN.md](DESIGN.md#previews-while-seeking)).
+
+```json
+{"t": "thumb_req", "item": "tt15239678#k3x-2", "ms": 5400000, "w": 320}
+{"t": "thumb", "id": 13, "item": "tt15239678#k3x-2", "ms": 5400000, "at": 5398685, "jpeg": "/9j/4AAQ…"}
+{"t": "thumb", "id": 14, "item": "tt15239678#k3x-2", "ms": 5520000, "error": "not a Matroska file"}
+```
+
+| Field | Meaning |
+|---|---|
+| `item`, `ms` | The request's: the file playing, and the target on the bar. The answer repeats them |
+| `w` | The picture's width in pixels (the player draws it 1:1) |
+| `at` | The time of the keyframe pictured: the one at or before `ms` |
+| `jpeg` | The picture, base64: SDR (HDR and Dolby Vision tone-mapped), `w` pixels wide, a few kilobytes |
+| `error` | Why there's none (the file isn't Matroska, it couldn't be read…), instead of `at` and `jpeg` |
+
+- One request at a time. The next goes once the answer has come and the target has moved a 50th of the file since
+  the last request, or 0.4 s after it; after 2 s without an answer, it goes anyway.
+- The player shows only the answer to the request it waits for, and only while the key is held; others are dropped.
+- The agent makes one picture at a time; a request overtaken by a newer one while it waited gets no answer.
+- An agent that doesn't make pictures ignores `thumb_req`, and the bar works as before.
+
 ## Events (player → agent)
 
 Events have no `id`. Each one about a file carries its `item`.
@@ -216,6 +242,7 @@ Events have no `id`. Each one about a file carries its `item`.
 | `closed` | `pos`, `dur`, `why` (`stop`, `back`, `home`, `error`, `replaced`, `idle`) | The last word about an item: on `stop`, Back, leaving the screen, a fatal error, a `load` of something else, or a minute after the end with nothing loaded since (the screen then closes). Sent before the decoder is released |
 | `preloaded` | `ms` (how long it took) | When a `preload` is ready |
 | `key` | `key` (`next`, `previous`) | The remote's next or previous while the player is in front: the agent decides what comes next |
+| `thumb_req` | `ms`, `w` | While ← or → is held: a picture of the target, answered with [`thumb`](#thumb-a-picture-of-where-a-held--is-going) |
 
 ### Track
 

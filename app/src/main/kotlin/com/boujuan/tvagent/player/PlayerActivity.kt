@@ -50,6 +50,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private lateinit var loading: LoadingScreen
     private lateinit var pause: PauseScreen
     private lateinit var settings: Settings
+    private lateinit var preview: SeekPreview
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,6 +78,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
             { settings.styleSubtitles(subtitles) }) {
             pairing?.takeIf { connected }?.let { getString(R.string.about_connected, it.hosts.joinToString(", ")) }
         }
+        preview = SeekPreview(findViewById(R.id.preview_stub)) { link?.send(it) }
         session = Session(this, engine.player, this)
         val paired = Pairing.load(this)
         pairing = paired
@@ -169,6 +171,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
                 "add_sub" -> return engine.addSub(cmd) { index, error -> ack(id, error, index?.let { JSONObject().put("text", it) }) }
                 "volume" -> volume(cmd)
                 "status" -> return ack(id, null, engine.status())
+                "thumb" -> preview.got(cmd, holding = scrub != C.TIME_UNSET)
                 "osd" -> {
                     val text = cmd.optString("text").ifEmpty { null }
                     if (text == null) loading.hide()
@@ -328,6 +331,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         movedAt = now
         val factor = Settings.speedFactor(settings[Settings.HELD_SPEED])
         scrub = (scrub + (direction * speed(now - event.downTime, dur) * factor * dt).toLong()).coerceIn(0, dur)
+        preview.want(engine.item?.id, scrub, dur.takeIf { it != Long.MAX_VALUE } ?: 0, now)
     }
 
     private fun letGo() {
@@ -339,6 +343,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
 
     private fun dropScrub() {
         scrub = C.TIME_UNSET
+        preview.hide()
         main.removeCallbacks(letGoLater)
         if (bar.visibility == View.VISIBLE) drawBar()
     }
@@ -410,7 +415,18 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         progress.progress = if (dur > 0) (at * 1000 / dur).toInt() else 0
         progress.secondaryProgress = if (dur > 0) (p.bufferedPosition * 1000 / dur).toInt() else 0
         if (p.playbackState == Player.STATE_ENDED) bar.visibility = View.GONE
+        if (scrub != C.TIME_UNSET && dur > 0) placePreview(scrub, dur)
     }
+
+    /** The held ←/→'s picture: over the target's place on the bar, above the title. */
+    private fun placePreview(at: Long, dur: Long) {
+        progress.getLocationInWindow(spot)
+        val x = spot[0] + progress.width * (at.toFloat() / dur)
+        (bar.parent as View).getLocationInWindow(spot)
+        preview.place(x - spot[0], bar.top + bar.paddingTop - PREVIEW_GAP_DP * resources.displayMetrics.density)
+    }
+
+    private val spot = IntArray(2)
 
     // Nothing loaded for a minute (the agent gave up, or it ended and nothing followed): the screen goes.
     private val idle = Runnable {
@@ -427,6 +443,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         private const val BAR_MS = 4_000L
         private const val IDLE_MS = 60_000L
         private const val LET_GO_MS = 700L
+        private const val PREVIEW_GAP_DP = 8
         private val JUMP_KEYS = setOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
 

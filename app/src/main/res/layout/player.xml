@@ -117,4 +117,13 @@
                 android:textSize="18sp" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- A held ←/→'s picture of where it's going (SeekPreview), moved above the bar at the target -->
+    <ViewStub
+        android:id="@+id/preview_stub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:inflatedId="@+id/preview"
+        android:layout="@layout/preview" />
 </merge>

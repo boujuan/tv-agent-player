@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SeekPreview's picture: sized to the picture in code, with a thin light frame round it -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:background="@drawable/preview_frame"
+    android:importantForAccessibility="no"
+    android:padding="1dp"
+    android:scaleType="fitXY" />
