@@ -194,22 +194,41 @@ from the file's bitrate instead, within a budget:
   activity finishes; the next play brings up a fresh one in the still-warm process.
 - The screen stays on while playing or buffering, and not while paused, so a long pause ends in the screensaver,
   which stops the player and saves the position.
-- Back stops and closes; Home stops. The remote's play/pause, OK, left and right work on the player directly
-  (−10 s / +30 s); next and previous are passed to the agent as `key` events.
+- Back stops and closes (with a list open on the pause screen, it closes the list first); Home stops. The remote's
+  play/pause, OK, left and right work on the player directly (−10 s / +30 s by default, set in Settings); next and
+  previous are passed to the agent as `key` events.
 - Held left or right moves a target along the time bar without seeking, and one exact seek goes there when the key
   comes up. It glides: each repeat of the key (~20 a second) moves it by the time since the last one, at 20× the
   film's speed when the repeats start, doubling every second, up to a 15th of the film a second. A few seconds place
   a scene; half an hour of a two-hour film takes ~7.5 s. Seeking at every step, as 0.1.x did, cancelled the previous
-  step's read each time, so neither the picture nor the time moved until the key came up.
+  step's read each time, so neither the picture nor the time moved until the key came up. Settings can make it
+  slower (0.6×) or faster (1.6×).
 
 ## Screens
 
-The loading screen (and, from 0.4.0, the pause screen) are plain Views drawn over the picture, each inflated from a
-ViewStub the first time it's needed and GONE otherwise, so nothing in them runs while a film plays.
+The loading and pause screens are plain Views drawn over the picture, each inflated from a ViewStub the first time
+it's needed and GONE otherwise, so nothing in them runs while a film plays.
 
 - **Loading**: the agent's `loading` (PROTOCOL.md) during the 3–6 s stream lookup, where there was a black screen with
   a line of text: the backdrop (or the poster), the logo or the title, the subtitle, what was heard, and the step with
   a small spinner (an animated drawable, drawn by the render thread). It fades out at the first frame of the `load`.
+- **Pause**: on a pause (the remote's or the agent's) the paused picture gets a scrim with the clock and when the
+  film ends, the corner badges, what's playing (`info`: the logo or title, subtitle, plot, add-on, debrid service,
+  size, release, and the stream's description) and a row of small pills: audio track (with more than one), subtitles,
+  subtitle size, Settings. ↓ goes into the row, ←/→ along it, OK opens a list on the right, Back or ← closes it;
+  with nothing picked, OK resumes and ←/→ jump as always. A track picked there goes through the same `select` as the
+  agent's, so the agent gets its `tracks` event. The film's subtitle lines are hidden while it's up (the time bar would
+  cover them), and a sample line shows instead while a subtitle look is being picked, changing as the pick moves; Back
+  puts the old look back.
+- **Badges**: from the playing tracks (4K/1080p/720p, DV/HDR10/HLG, TrueHD/DTS-HD MA/DTS/DD+/DD, E-AC3 JOC as Atmos,
+  7.1/5.1) and the agent's `badges` for what a header can't tell (`hdr10+`, and `atmos` or `dtsx` only on a track of a
+  codec that carries them, so the release's Atmos isn't put on a dubbed DD 5.1). In the pause screen's corner, and on
+  the time bar for its 4 s after a load.
+- **Settings** (kept on the TV): subtitle size (50–200 %, or the row's Extra small to Larger), height, colour,
+  background, edges and font, each "As the TV" (its captions settings) until set; how far ← and → jump; the held
+  speed; the badges after a load. About shows the version, the agent it's paired with, and whether GitHub has a newer
+  release (asked only when About opens). The same lists open from the app's tile on the home screen
+  (`SettingsActivity`, with a sample line of subtitles), which plays nothing: tv-agent opens the player itself.
 - **Pictures** (`Artwork`): fetched only while a screen that shows them is up, on a thread of their own at the lowest
   priority, decoded straight to the size shown (`ImageDecoder.setTargetSize`; the 1920×1080 backdrop to 1280×720) into
   graphics memory rather than the Java heap. Kept for the playing item and the next only; the backdrop is let go as
@@ -224,11 +243,13 @@ Measured on the TV on 2026-10-24:
 | PSS at 60 s of that play | 201 MB (Java heap 175) | 213 MB (Java heap 173) |
 | The screen open, nothing loaded | 29.9 MB | 31.8 MB; 37.8 MB once the loading screen has shown its pictures, and after it's gone |
 | Loading screen up, then the first frame | — | 7.1 s up in all (steps at 0, 3 and 4.5 s), first frame 2.0 s after the `load` |
+| Pause screen, from the `pause` to the frame that shows it | — | 236 ms the first time (inflating it), 43 ms after |
 
 From the first byte on, starts are the same. The loading screen's memory is the image decoders' code and native
 heap, ~5 MB that stays; its pictures are graphics memory and go with it. The 12 MB more PSS during the play was
-measured after a pause had shown the pause screen (0.4.0) and is more than these screens account for; it's left to
-measure again against 0.2.1.
+measured after a pause had shown the pause screen and is more than these screens account for; it's left to measure
+again against 0.2.1. The pause figures are the first version's (before Settings); the rest of this release was
+checked on the TV in the settings screen, not yet over a film.
 
 ## Previews while seeking
 

@@ -71,7 +71,7 @@ except `bench`. Commands are applied in the order they arrive.
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
 | `play` | `false` loads it paused. Default `true` |
 | `http` | `httpengine` (the default: Android's built-in Cronet) or `platform` (HttpURLConnection): the HTTP stack for this link, for measuring |
-| `info` | What the player shows about it, kept with the item: `title`, `subtitle`, `plot`, `poster`, `backdrop`, `logo` (public artwork links: Cinemeta, metahub, TMDB; never a stream link), `source` (the add-on), `description` (the add-on's stream title, as text, links removed; the player removes any it finds too), `debrid`, `size` (bytes), `release` (the group), `badges` (what the file's header can't tell: `atmos`, `dtsx`, `hdr10+`, `imax`, `remux`). All optional |
+| `info` | What the pause screen shows about it, kept with the item: `title`, `subtitle`, `plot`, `poster`, `backdrop`, `logo` (public artwork links: Cinemeta, metahub, TMDB; never a stream link), `source` (the add-on), `description` (the add-on's stream title, as text, links removed; the player removes any it finds too), `debrid`, `size` (bytes), `release` (the group), `badges` (what the file's header can't tell: `atmos`, `dtsx`, `hdr10+`, `imax`, `remux`). All optional |
 
 It replaces what's loaded in place: the screen stays, there's no relaunch. If a `preload` of the same `url` is
 ready, it's used. The answer comes as soon as loading has started; `first_frame` follows when the picture moves.
@@ -207,7 +207,7 @@ Events have no `id`. Each one about a file carries its `item`.
 | `state` | `state` (`idle`, `buffering`, `ready`, `ended`), `playing` | On every change |
 | `pos` | `pos`, `dur`, `buf` (ms; `buf` is how far ahead is buffered) | Every second while playing, every 10 s otherwise, and at once after a load, seek, pause or play |
 | `first_frame` | `ms` (since the `load` or `seek` arrived), `after` (`load` or `seek`), `in_buffer` for a seek | When the picture first moves after either |
-| `tracks` | `audio`, `text` (as for the command) | When they're known, and after every change |
+| `tracks` | `audio`, `text` (as for the command) | When they're known, and after every change (the agent's `select`, or a track picked on the pause screen) |
 | `video` | `decoder`, `mime`, `codecs`, `w`, `h`, `fps`, `hdr` (`dv`, `hdr10`, `hlg`, `sdr`; HDR10+ is metadata in each frame, not in the header, so an HDR10+ file says `hdr10`), `dv_profile`, `init_ms` (the decoder's start-up) | When the video decoder starts |
 | `audio` | `mime`, `ch`, `rate`, `out` (`passthrough` or `pcm`), `encoding`, `offload`; after the TV's audio dropped a bitstream, `dropout`: `lost` on the PCM output that replaced it (with `cause`: `dead_object`, `write_failed` or `init_failed`), then `restored` when it's a bitstream again (with `pcm_ms`, how long it was PCM, and `gap_ms`, the sound's gap while switching back; no `gap_ms` when Media3 switched back by itself) | When the audio output starts; a `restored` one when its sound starts |
 | `timing` | `ms`: `{"first_byte", "prepared", "first_frame", "ready"}` from the load's arrival; `bytes`, `requests`, `preloaded`, `cap_mb` (the buffer's byte cap) | Once per load, when it's ready and the picture has moved |

@@ -3,6 +3,23 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.4.0 — 2026-10-24
+
+### Added
+- A pause screen over the paused picture: the clock and when the film ends, what's playing (from the agent's `info`:
+  logo or title, plot, add-on, debrid service, size, release, the stream's description), corner badges (4K, DV,
+  HDR10+, TrueHD, Atmos, 7.1… from the tracks and the release), and a row of small pills: audio track, subtitles,
+  subtitle size (Extra small to Larger) and Settings. Tracks picked there reach the agent as its own `select` does.
+- The badges on the time bar for a few seconds after a start.
+- Settings, from the pause screen or the app's new tile on the home screen: subtitle size in %, height, colour,
+  background, edges and font (each "As the TV" until set), shown on a sample line as they're picked; how far ← and →
+  jump; how fast a held ←/→ goes; the badges after a start; About, with the version, the agent and whether a newer
+  release is out.
+
+### Changed
+- Back closes the player again even with a pill picked; with a list open, it closes the list first.
+- While the pause screen is up the film's subtitle lines are hidden (the time bar covered them).
+
 ## 0.3.0 — 2026-10-24
 
 ### Added
