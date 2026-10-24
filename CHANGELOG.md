@@ -3,6 +3,18 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.2.1 — 2026-10-24
+
+### Fixed
+- The bitstream comes back after the TV's audio drops it. On 2026-10-24 the TV killed Oppenheimer's DTS-HD
+  passthrough track (`AudioTrack write failed: -6`); Media3 recovered, but took the route for stereo PCM from then on
+  and decoded the rest of the film to PCM. Now the player checks the route once a second while it's PCM and, once it
+  takes the format again, re-enables only the audio renderer, which starts again as a bitstream; the picture isn't
+  touched. With the same failure simulated: back to DTS-HD 1.2 s after the drop, with a 0.3 s gap.
+
+### Added
+- The `audio` event says so: `dropout` `lost` (with its `cause`), then `restored` (with `pcm_ms` and `gap_ms`).
+
 ## 0.2.0 — 2026-10-24
 
 ### Changed

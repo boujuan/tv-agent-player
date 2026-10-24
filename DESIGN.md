@@ -242,6 +242,30 @@ already has the right ones: no switch after the start, and no recheck eight seco
   time. Media3 parses them (SubRip, WebVTT, SSA/ASS, TTML), so the timing and styles are the same as for a file's
   own tracks.
 
+## When the TV drops the bitstream
+
+On 2026-10-24 at 01:37 the TV's audio HAL killed Oppenheimer's DTS-HD passthrough track: `AudioTrack write failed:
+-6` (ERROR_DEAD_OBJECT). Media3 1.11.1 recovers from that, but on the way its audio output takes the route for
+stereo PCM only (`AudioTrackAudioOutputProvider` overrides the capabilities "until the next event that triggers a new
+evaluation": an HDMI or audio device change), then re-enables every renderer. The audio renderer found DTS-HD
+unsupported and decoded it: `audio/vnd.dts.hd 6 ch → pcm pcm16`. On the TV's own speakers no device change ever
+comes, so it would have stayed PCM for the rest of the film.
+
+- **Noticed** when the audio output starts as PCM for a format that went out as a bitstream before in the same file,
+  after a failed write or start (Media3's `onAudioSinkError`).
+- **Checked** once a second from then on, asking Android what the route takes (`AudioCapabilities.getCapabilities`,
+  one binder call), and only while it's PCM.
+- **Switched back** once the route takes the format again: Media3's output is read again (`AudioRoute.refresh`, on the
+  playback thread; the output provider re-reads the route when the audio attributes change, so it's asked once with a
+  difference that changes nothing for the sound and once as it was), without telling the player, which would seek every
+  renderer, the picture's too. Then only the audio renderer goes off and on (`setTrackTypeDisabled` twice), and starts
+  again as a bitstream. Its samples are still in memory (12 s are kept behind the position), so nothing is read again
+  and the picture isn't touched. At most three times a file: a route that keeps dropping it stays PCM.
+- **Reported** in the `audio` event: `dropout` `lost` with its `cause`, then `restored` with `pcm_ms` and `gap_ms`.
+- **Measured** with a test build that fails a write exactly as the TV did (Media3's own override, then
+  ERROR_DEAD_OBJECT) on Oppenheimer: Media3's recovery 0.35 s, PCM for 1.16 s, back to DTS-HD with a 0.31 s gap in the
+  sound. Heard on the TV as two short gaps.
+
 ## Not doing, and why
 
 | | Why not |
