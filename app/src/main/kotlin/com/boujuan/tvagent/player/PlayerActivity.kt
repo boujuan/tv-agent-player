@@ -120,6 +120,11 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         shut = true
         if (standalone) setResult(RESULT_OK, result())
         main.removeCallbacksAndMessages(null)
+        // Left while a start was on the way (its loading screen up, its file not loaded yet): the agent hears which
+        // start it was, so it stops it, where it used to try loading it into the closed screen and fail (16:55, 2026-10-24).
+        loading.item?.takeIf { loading.showing && it != engine.item?.id }?.let { starting ->
+            link?.send(msg("closed", "item" to starting, "why" to why, "pos" to 0, "dur" to 0))
+        }
         engine.release(why)
         session.release()
         artwork.release()

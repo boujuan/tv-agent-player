@@ -3,6 +3,13 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.6.2 — 2026-10-24
+
+### Changed
+- Back (or Home) while a start's loading screen is up sends `closed` for that start (`why` "back", `pos` 0), so
+  tv-agent can stop it rather than load it into the closed screen and say "That didn't work" (two starts on
+  2026-10-24 16:55 ended that way after a Back about a second after the screen came up). PROTOCOL.md says so.
+
 ## 0.6.1 — 2026-10-24
 
 ### Fixed
