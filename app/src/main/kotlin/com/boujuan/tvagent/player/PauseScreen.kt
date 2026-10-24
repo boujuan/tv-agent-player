@@ -8,13 +8,10 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewStub
-import android.view.accessibility.CaptioningManager
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.media3.common.C
-import androidx.media3.ui.SubtitleView
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Date
@@ -22,14 +19,14 @@ import java.util.Locale
 
 /**
  * The pause screen: over the paused picture, under the time bar. What's playing (`load`'s `info`), the clock and
- * when it ends, the corner badges, and a menu worked with the remote's arrows: audio track, subtitles, their size
- * and position. Track changes go through Engine.select, so the agent gets its `tracks` event as for its own
- * `select`. Inflated on the first pause, GONE while playing; nothing in it runs while it's hidden.
+ * when it ends, the corner badges, and a row worked with the remote's arrows: audio track, subtitles, their size, and
+ * Settings (every option, About). Track changes go through Engine.select, so the agent gets its `tracks` event as for
+ * its own `select`. Inflated on the first pause, GONE while playing; nothing in it runs while it's hidden.
  */
 class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, private val engine: Engine,
-                  private val subtitles: SubtitleView) {
+                  private val settings: Settings, private val preview: (Boolean) -> Unit, private val applied: () -> Unit,
+                  private val agent: () -> String?) {
     private val context: Context = stub.context
-    private val prefs = context.getSharedPreferences("screen", Context.MODE_PRIVATE)
     private var root: View? = null
     private lateinit var clock: TextView
     private lateinit var ends: TextView
@@ -40,22 +37,14 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
     private lateinit var plot: TextView
     private lateinit var origin: TextView
     private lateinit var description: TextView
-    private lateinit var menu: LinearLayout
-    private lateinit var choices: View
-    private lateinit var choicesTitle: TextView
-    private lateinit var choicesScroll: ScrollView
-    private lateinit var choicesList: LinearLayout
+    private lateinit var row: LinearLayout
+    private lateinit var menu: Menu
+    private lateinit var settingsMenu: SettingsMenu
 
-    private var entry = -1                  // the menu entry picked with the arrows, -1: none
-    private var open: Entry? = null         // the entry whose choices are shown
-    private var choice = 0
+    private var entry = -1                  // the row's entry picked with the arrows, -1: none
     private var shownFor: String? = null    // the item the info was filled for
 
     val showing get() = root?.visibility == View.VISIBLE
-
-    init {
-        applySubtitleStyle()
-    }
 
     /** Up on a pause (the remote's or the agent's, asked for at `since`, uptime), filled for what's loaded. */
     fun show(since: Long) {
@@ -65,8 +54,7 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
         val v = root ?: inflate()
         if (shownFor != item.id || firstTime) fill(item)
         entry = -1
-        closeChoices()
-        drawMenu()
+        drawRow()
         update()
         v.visibility = View.VISIBLE
         // How long a pause takes to show, for DESIGN.md: to the frame that has it.
@@ -78,8 +66,8 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
     fun hide() {
         val v = root ?: return
         if (v.visibility == View.GONE) return
+        menu.close()                        // a subtitle look being tried goes back
         v.visibility = View.GONE
-        closeChoices()
         entry = -1
     }
 
@@ -98,10 +86,10 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
         fillBadges(badges, Badges.of(engine.videoFormat, engine.audioFormat, engine.item?.info?.badges.orEmpty()))
     }
 
-    /** Tracks changed (the agent's `select`, a subtitle added): the menu's values follow. */
+    /** Tracks changed (the agent's `select`, a subtitle added): the row's values follow. */
     fun tracksChanged() {
         if (!showing) return
-        drawMenu()
+        drawRow()
         update()
     }
 
@@ -132,26 +120,26 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
         view.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
     }
 
-    // ---- the menu ----
+    // ---- the row, and the lists it opens ----
 
-    private enum class Entry { AUDIO, SUBTITLES, SIZE, PLACE }
+    private enum class Entry { AUDIO, SUBTITLES, SIZE, SETTINGS }
 
-    private fun entries(): List<Entry> {
+    private fun entries(tracks: JSONObject = engine.tracks()): List<Entry> =
+        listOfNotNull(Entry.AUDIO.takeIf { tracks.getJSONArray("audio").length() > 1 }, Entry.SUBTITLES, Entry.SIZE,
+            Entry.SETTINGS)
+
+    private fun drawRow() {
         val tracks = engine.tracks()
-        return listOfNotNull(Entry.AUDIO.takeIf { tracks.getJSONArray("audio").length() > 1 }, Entry.SUBTITLES,
-            Entry.SIZE, Entry.PLACE)
-    }
-
-    private fun drawMenu() {
-        val tracks = engine.tracks()
-        val list = entries()
-        menu.removeAllViews()
+        row.removeAllViews()
         val inflater = LayoutInflater.from(context)
-        for ((k, e) in list.withIndex()) {
-            val chip = inflater.inflate(R.layout.chip, menu, false) as TextView
-            chip.text = context.getString(R.string.entry, context.getString(label(e)), value(e, tracks))
+        for ((k, e) in entries(tracks).withIndex()) {
+            val chip = inflater.inflate(R.layout.chip, row, false) as TextView
+            chip.text = when (e) {
+                Entry.SETTINGS -> context.getString(R.string.settings)
+                else -> context.getString(R.string.entry, context.getString(label(e)), value(e, tracks))
+            }
             chip.isSelected = k == entry
-            menu.addView(chip)
+            row.addView(chip)
         }
     }
 
@@ -159,103 +147,59 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
         Entry.AUDIO -> R.string.audio
         Entry.SUBTITLES -> R.string.subtitles
         Entry.SIZE -> R.string.subtitle_size
-        Entry.PLACE -> R.string.subtitle_place
+        Entry.SETTINGS -> R.string.settings
     }
 
     private fun value(e: Entry, tracks: JSONObject): String = when (e) {
         Entry.AUDIO -> selected(tracks.getJSONArray("audio"))?.let(::audioName) ?: "—"
         Entry.SUBTITLES -> selected(tracks.getJSONArray("text"))?.takeUnless { it.optBoolean("forced") }?.let(::textName)
             ?: context.getString(R.string.off)
-        Entry.SIZE -> context.resources.getStringArray(R.array.sizes)[size()]
-        Entry.PLACE -> context.resources.getStringArray(R.array.places)[place()]
+        Entry.SIZE -> settings[Settings.SUB_SIZE].let { v ->
+            Settings.SIZES.indexOf(v).takeIf { it >= 0 }?.let { context.resources.getStringArray(R.array.sizes)[it] }
+                ?: Settings.SUB_SIZE.show(context, v)
+        }
+        Entry.SETTINGS -> ""
     }
 
-    /** What each entry offers, and which of them is the current one. */
-    private fun options(e: Entry): Pair<List<String>, Int> {
+    private fun open(e: Entry) {
         val tracks = engine.tracks()
-        return when (e) {
+        when (e) {
             Entry.AUDIO -> {
                 val a = tracks.getJSONArray("audio")
-                (0 until a.length()).map { audioName(a.getJSONObject(it)) } to indexSelected(a)
+                val now = indexSelected(a)
+                menu.push(Menu.Page(context.getString(R.string.audio), (0 until a.length()).map { audioName(a.getJSONObject(it)) },
+                    at = now.coerceAtLeast(0), current = now) { k ->
+                    // The tracks may have changed meanwhile (a subtitle added): then there's nothing to apply.
+                    runCatching { engine.select(JSONObject().put("audio", k)) }
+                    true
+                })
             }
             Entry.SUBTITLES -> {
                 val t = tracks.getJSONArray("text")
-                val on = indexSelected(t).takeIf { it >= 0 && !t.getJSONObject(it).optBoolean("forced") }
-                (listOf(context.getString(if (hasForced(t)) R.string.forced_only else R.string.off)) +
-                    (0 until t.length()).map { textName(t.getJSONObject(it)) }) to (on?.plus(1) ?: 0)
+                val on = indexSelected(t).takeIf { it >= 0 && !t.getJSONObject(it).optBoolean("forced") }?.plus(1) ?: 0
+                menu.push(Menu.Page(context.getString(R.string.subtitles),
+                    listOf(context.getString(if (hasForced(t)) R.string.forced_only else R.string.off)) +
+                        (0 until t.length()).map { textName(t.getJSONObject(it)) }, at = on, current = on) { k ->
+                    runCatching { engine.select(JSONObject().put("text", if (k == 0) JSONObject.NULL else k - 1)) }
+                    true
+                })
             }
-            Entry.SIZE -> context.resources.getStringArray(R.array.sizes).toList() to size()
-            Entry.PLACE -> context.resources.getStringArray(R.array.places).toList() to place()
+            Entry.SIZE -> menu.push(settingsMenu.values(Settings.SUB_SIZE,
+                context.resources.getStringArray(R.array.sizes).toList(), Settings.SIZES) { drawRow() })
+            Entry.SETTINGS -> settingsMenu.open()
         }
-    }
-
-    private fun apply(e: Entry, k: Int) {
-        when (e) {
-            // The tracks may have changed meanwhile (a subtitle added): then there's nothing to apply.
-            Entry.AUDIO -> runCatching { engine.select(JSONObject().put("audio", k)) }
-            Entry.SUBTITLES -> runCatching { engine.select(JSONObject().put("text", if (k == 0) JSONObject.NULL else k - 1)) }
-            Entry.SIZE -> prefs.edit().putInt("size", k).apply()
-            Entry.PLACE -> prefs.edit().putInt("place", k).apply()
-        }
-        if (e == Entry.SIZE || e == Entry.PLACE) applySubtitleStyle()
-    }
-
-    private fun openChoices(e: Entry) {
-        val (names, current) = options(e)
-        open = e
-        choice = current.coerceAtLeast(0)
-        choicesTitle.setText(label(e))
-        choicesList.removeAllViews()
-        val inflater = LayoutInflater.from(context)
-        for ((k, name) in names.withIndex()) {
-            val row = inflater.inflate(R.layout.choice, choicesList, false) as TextView
-            row.text = if (k == current) "$name  ✓" else name
-            choicesList.addView(row)
-        }
-        choices.visibility = View.VISIBLE
-        drawChoice()
-    }
-
-    private fun closeChoices() {
-        open = null
-        if (root != null) {
-            choices.visibility = View.GONE
-            choicesList.removeAllViews()
-        }
-    }
-
-    private fun drawChoice() {
-        for (k in 0 until choicesList.childCount) choicesList.getChildAt(k).isSelected = k == choice
-        val row = choicesList.getChildAt(choice) ?: return
-        choicesScroll.post { choicesScroll.smoothScrollTo(0, (row.top - choicesScroll.height / 3).coerceAtLeast(0)) }
     }
 
     /**
-     * The remote while the screen is up: true when the menu took the key. Down goes into the menu, Up or Back out of
-     * it; with nothing picked, the keys do what they do while playing (OK resumes, ←/→ jump).
+     * The remote while the screen is up: true when the screen took the key. ↓ goes into the row, ↑ out of it, OK
+     * opens an entry's list; with nothing picked the keys do what they do while playing (OK resumes, ←/→ jump).
      */
     fun onKey(keyCode: Int): Boolean {
         if (!showing) return false
-        val opened = open
-        if (opened != null) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_UP -> if (choice > 0) choice--
-                KeyEvent.KEYCODE_DPAD_DOWN -> if (choice < choicesList.childCount - 1) choice++
-                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                    apply(opened, choice)
-                    closeChoices()
-                    drawMenu()
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                    closeChoices()
-                    return true
-                }
-                KeyEvent.KEYCODE_DPAD_RIGHT -> {}
-                else -> return false
-            }
-            drawChoice()
-            return true
+        if (menu.open) {
+            val took = menu.onKey(keyCode)
+            if (!menu.open) drawRow()
+            return took
         }
         val list = entries()
         when (keyCode) {
@@ -264,37 +208,19 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
             KeyEvent.KEYCODE_DPAD_LEFT -> if (entry >= 0) entry = (entry - 1).coerceAtLeast(0) else return false
             KeyEvent.KEYCODE_DPAD_RIGHT -> if (entry >= 0) entry = (entry + 1).coerceAtMost(list.size - 1) else return false
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER ->
-                if (entry >= 0) list.getOrNull(entry)?.let(::openChoices) else return false
+                if (entry >= 0) list.getOrNull(entry)?.let(::open) else return false
             else -> return false
         }
-        drawMenu()
+        drawRow()
         return true
     }
 
-    /** Back: closes the choices, then leaves the menu; false when there was neither (Back then stops, as always). */
+    /** Back: closes the list that's open; false when none is (Back then stops, as always). */
     fun back(): Boolean {
-        if (!showing) return false
-        if (open != null) {
-            closeChoices()
-            return true
-        }
-        if (entry >= 0) {
-            entry = -1
-            drawMenu()
-            return true
-        }
-        return false
-    }
-
-    // ---- subtitles' size and position (kept between plays) ----
-
-    private fun size() = prefs.getInt("size", 1).coerceIn(0, SIZES.size - 1)
-    private fun place() = prefs.getInt("place", 1).coerceIn(0, PLACES.size - 1)
-
-    private fun applySubtitleStyle() {
-        val scale = context.getSystemService(CaptioningManager::class.java)?.fontScale ?: 1f
-        subtitles.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * scale * SIZES[size()])
-        subtitles.setBottomPaddingFraction(PLACES[place()])
+        if (!showing || !menu.open) return false
+        menu.back()
+        if (!menu.open) drawRow()
+        return true
     }
 
     private fun inflate(): View {
@@ -308,11 +234,10 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
         plot = v.findViewById(R.id.pause_plot)
         origin = v.findViewById(R.id.pause_origin)
         description = v.findViewById(R.id.pause_description)
-        menu = v.findViewById(R.id.pause_menu)
-        choices = v.findViewById(R.id.pause_choices)
-        choicesTitle = v.findViewById(R.id.pause_choices_title)
-        choicesScroll = v.findViewById(R.id.pause_choices_scroll)
-        choicesList = v.findViewById(R.id.pause_choices_list)
+        row = v.findViewById(R.id.pause_menu)
+        menu = Menu(v.findViewById(R.id.pause_choices), v.findViewById(R.id.pause_choices_title),
+            v.findViewById(R.id.pause_choices_scroll), v.findViewById(R.id.pause_choices_list))
+        settingsMenu = SettingsMenu(context, settings, menu, preview, applied, agent)
         v.visibility = View.GONE
         root = v
         return v
@@ -320,9 +245,6 @@ class PauseScreen(private val stub: ViewStub, private val artwork: Artwork, priv
 
     companion object {
         private const val TAG = "Pause"
-        private val SIZES = floatArrayOf(0.8f, 1f, 1.25f, 1.5f)
-        // Lower puts a scope film's lines into the black bar under the picture.
-        private val PLACES = floatArrayOf(0.03f, SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION, 0.16f)
 
         /** The badges as small framed labels, in `into` (the pause screen's corner, the time bar). */
         fun fillBadges(into: LinearLayout, names: List<String>) {

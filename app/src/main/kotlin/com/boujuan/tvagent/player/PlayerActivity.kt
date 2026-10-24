@@ -49,6 +49,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private lateinit var artwork: Artwork
     private lateinit var loading: LoadingScreen
     private lateinit var pause: PauseScreen
+    private lateinit var settings: Settings
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,7 +64,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         duration = findViewById(R.id.duration)
         progress = findViewById(R.id.progress)
         barBadges = findViewById(R.id.bar_badges)
-        subtitles.setUserDefaultStyle()
+        settings = Settings(this)
+        settings.styleSubtitles(subtitles)
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
             if (!pause.back()) shutDown("back")
         }
@@ -71,14 +73,18 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         engine.attach(findViewById<SurfaceView>(R.id.surface))
         artwork = Artwork(engine.http.userAgent)
         loading = LoadingScreen(findViewById<ViewStub>(R.id.loading_stub), artwork)
-        pause = PauseScreen(findViewById<ViewStub>(R.id.pause_stub), artwork, engine, subtitles)
+        pause = PauseScreen(findViewById<ViewStub>(R.id.pause_stub), artwork, engine, settings, ::sample,
+            { settings.styleSubtitles(subtitles) }) {
+            pairing?.takeIf { connected }?.let { getString(R.string.about_connected, it.hosts.joinToString(", ")) }
+        }
         session = Session(this, engine.player, this)
-        val pairing = Pairing.load(this)
-        if (pairing == null) {
+        val paired = Pairing.load(this)
+        pairing = paired
+        if (paired == null) {
             say(getString(R.string.not_paired))
         } else {
             say(getString(R.string.connecting))
-            link = Link(pairing, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, this).also { it.start() }
+            link = Link(paired, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE, this).also { it.start() }
         }
         idleLater()
     }
@@ -112,11 +118,13 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     // ---- the agent ----
 
     override fun onUp() {
+        connected = true
         if (engine.item == null) say(null)
         engine.sendAll()
     }
 
     override fun onDown() {
+        connected = false
         if (engine.item == null) say(getString(R.string.connecting))
     }
 
@@ -213,7 +221,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
 
     override fun onFirstFrame() {
         loading.hide()
-        showBar(BAR_MS, badges = true)
+        showBar(BAR_MS, badges = settings[Settings.BADGES] == 1)
     }
 
     override fun onVideoAspect(ratio: Float) = frame.setAspectRatio(ratio)
@@ -223,7 +231,25 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
-    override fun onCues(cues: List<Cue>) = subtitles.setCues(cues)
+    override fun onCues(cues: List<Cue>) {
+        shownCues = cues
+        if (!sampling) subtitles.setCues(cues)
+    }
+
+    /**
+     * A sample line instead of the film's while a subtitle look is being picked (`on`), so its effect shows; the
+     * film's own lines are hidden the rest of the time the pause screen is up (the time bar would cover them).
+     */
+    private fun sample(on: Boolean) {
+        sampling = on
+        subtitles.setCues(if (on) listOf(Cue.Builder().setText(getString(R.string.sample_subtitle)).build()) else shownCues)
+        subtitles.visibility = if (on || !pause.showing) View.VISIBLE else View.INVISIBLE
+    }
+
+    private var shownCues: List<Cue> = emptyList()
+    private var sampling = false
+    private var connected = false
+    private var pairing: Pairing? = null
 
     override fun onChanged() {
         session.update(engine.item?.let { it.title ?: "" })
@@ -232,6 +258,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         val paused = engine.item != null && !going && !loading.showing &&
             p.playbackState != Player.STATE_ENDED && p.playbackState != Player.STATE_IDLE
         if (paused) pause.show(pauseAsked.takeIf { it > 0 } ?: SystemClock.uptimeMillis()) else pause.hide()
+        if (!sampling) subtitles.visibility = if (pause.showing) View.INVISIBLE else View.VISIBLE
         pauseAsked = 0
         if (going != wasGoing) showBar(BAR_MS)          // paused: it stays; resumed: it goes after a moment
         else if (bar.visibility == View.VISIBLE) drawBar()
@@ -285,7 +312,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private fun jump(event: KeyEvent, direction: Int) {
         if (event.repeatCount == 0) {
             if (scrub != C.TIME_UNSET) letGo()               // the other key while one was held
-            engine.seekBy(if (direction < 0) -10_000 else 30_000, null)
+            engine.seekBy(if (direction < 0) -1000L * settings[Settings.JUMP_BACK] else 1000L * settings[Settings.JUMP_FORWARD], null)
             return
         }
         val now = event.eventTime
@@ -299,7 +326,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         val dur = engine.player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
         val dt = (now - movedAt).coerceIn(0, 200)
         movedAt = now
-        scrub = (scrub + (direction * speed(now - event.downTime, dur) * dt).toLong()).coerceIn(0, dur)
+        val factor = Settings.speedFactor(settings[Settings.HELD_SPEED])
+        scrub = (scrub + (direction * speed(now - event.downTime, dur) * factor * dt).toLong()).coerceIn(0, dur)
     }
 
     private fun letGo() {

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The banner's colours, so the subtitles' sample line has something like a picture under it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="315"
+        android:endColor="#FF1C4470"
+        android:startColor="#FF0B1622" />
+</shape>

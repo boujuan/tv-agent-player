@@ -6,7 +6,9 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** What the loading and pause screens are told and make of it (PROTOCOL.md, `loading` and `info`). */
@@ -78,5 +80,20 @@ class ScreensTest {
         assertEquals(1280 to 853, Artwork.fit(1500, 1000, 1280, 720, cover = true))     // covers the box
         assertEquals(1080 to 720, Artwork.fit(1500, 1000, 1280, 720, cover = false))    // fits inside it
         assertEquals(500 to 300, Artwork.fit(500, 300, 1280, 720, cover = true))        // never enlarged
+    }
+
+    @Test
+    fun aboutTellsANewerRelease() {
+        assertTrue(SettingsMenu.newer("0.4.1", "0.4.0"))
+        assertTrue(SettingsMenu.newer("0.10.0", "0.9.9"))
+        assertFalse(SettingsMenu.newer("0.4.0", "0.4.0"))
+        assertFalse(SettingsMenu.newer("0.4.0", "0.4.0-test"))       // a test build is its release's number
+        assertFalse(SettingsMenu.newer("0.3.9", "0.4.0"))
+    }
+
+    @Test
+    fun everySettingStartsAtOneOfItsValues() {
+        for (o in Settings.ALL) assertTrue(o.key, o.default in o.values)
+        for (size in Settings.SIZES) assertTrue("$size %", size in Settings.SUB_SIZE.values)
     }
 }
