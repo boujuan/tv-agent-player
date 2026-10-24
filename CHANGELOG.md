@@ -3,6 +3,16 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.3.0 — 2026-10-24
+
+### Added
+- A loading screen while the agent finds the stream, where there was a black screen with a line of text: the
+  backdrop (or the poster), the logo or the title, what was heard, and the step ("Finding streams…") with a small
+  spinner. It comes with the agent's new `loading` command and fades out at the film's first frame. Pictures are
+  fetched only while it's up, decoded to the size shown, and never hold the start up.
+- `load` and `preload` take `info` (title, plot, artwork, where the file comes from, the release's badges), kept with
+  the item for the pause screen.
+
 ## 0.2.1 — 2026-10-24
 
 ### Fixed

@@ -202,6 +202,34 @@ from the file's bitrate instead, within a budget:
   a scene; half an hour of a two-hour film takes ~7.5 s. Seeking at every step, as 0.1.x did, cancelled the previous
   step's read each time, so neither the picture nor the time moved until the key came up.
 
+## Screens
+
+The loading screen (and, from 0.4.0, the pause screen) are plain Views drawn over the picture, each inflated from a
+ViewStub the first time it's needed and GONE otherwise, so nothing in them runs while a film plays.
+
+- **Loading**: the agent's `loading` (PROTOCOL.md) during the 3–6 s stream lookup, where there was a black screen with
+  a line of text: the backdrop (or the poster), the logo or the title, the subtitle, what was heard, and the step with
+  a small spinner (an animated drawable, drawn by the render thread). It fades out at the first frame of the `load`.
+- **Pictures** (`Artwork`): fetched only while a screen that shows them is up, on a thread of their own at the lowest
+  priority, decoded straight to the size shown (`ImageDecoder.setTargetSize`; the 1920×1080 backdrop to 1280×720) into
+  graphics memory rather than the Java heap. Kept for the playing item and the next only; the backdrop is let go as
+  soon as its screen has gone. A missing or slow picture is simply not shown.
+
+Measured on the TV on 2026-10-24:
+
+| | 0.1.1 | With the screens |
+|---|---|---|
+| Starts, B from 30:00 (player's own first frame, 3 each) | 1.84, 1.70, 1.71 s | 2.06 (the first byte took 652 ms), 1.68, 1.63 s |
+| 2-minute play of B: first frame, dropped frames | 2.71 s; 2 dropped, one 100 ms freeze | 1.73 s; 0 dropped, no freeze |
+| PSS at 60 s of that play | 201 MB (Java heap 175) | 213 MB (Java heap 173) |
+| The screen open, nothing loaded | 29.9 MB | 31.8 MB; 37.8 MB once the loading screen has shown its pictures, and after it's gone |
+| Loading screen up, then the first frame | — | 7.1 s up in all (steps at 0, 3 and 4.5 s), first frame 2.0 s after the `load` |
+
+From the first byte on, starts are the same. The loading screen's memory is the image decoders' code and native
+heap, ~5 MB that stays; its pictures are graphics memory and go with it. The 12 MB more PSS during the play was
+measured after a pause had shown the pause screen (0.4.0) and is more than these screens account for; it's left to
+measure again against 0.2.1.
+
 ## Previews while seeking
 
 Debrid files have no thumbnails, so a preview would have to be decoded from the file: the keyframe before the target

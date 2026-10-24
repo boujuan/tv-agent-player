@@ -71,6 +71,7 @@ except `bench`. Commands are applied in the order they arrive.
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
 | `play` | `false` loads it paused. Default `true` |
 | `http` | `httpengine` (the default: Android's built-in Cronet) or `platform` (HttpURLConnection): the HTTP stack for this link, for measuring |
+| `info` | What the player shows about it, kept with the item: `title`, `subtitle`, `plot`, `poster`, `backdrop`, `logo` (public artwork links: Cinemeta, metahub, TMDB; never a stream link), `source` (the add-on), `description` (the add-on's stream title, as text, links removed; the player removes any it finds too), `debrid`, `size` (bytes), `release` (the group), `badges` (what the file's header can't tell: `atmos`, `dtsx`, `hdr10+`, `imax`, `remux`). All optional |
 
 It replaces what's loaded in place: the screen stays, there's no relaunch. If a `preload` of the same `url` is
 ready, it's used. The answer comes as soon as loading has started; `first_frame` follows when the picture moves.
@@ -84,7 +85,30 @@ ready, it's used. The answer comes as soon as loading has started; `first_frame`
 
 Opens the link in the background: the file's header, its seek index (an MKV's Cues) and the first few seconds from
 `start_ms`, in memory. A `load` of the same `url` then starts from there. One preload at a time: a new one replaces
-the previous one. It's dropped when the screen closes. `preloaded` follows when it's ready.
+the previous one. It's dropped when the screen closes. `preloaded` follows when it's ready. Its `info` (as for
+`load`) comes along when it's played, unless the `load` has its own.
+
+### `loading`: the loading screen
+
+```json
+{"t": "loading", "id": 3, "item": "tt15239678#k3x-2", "heard": "Play Dune Part Two",
+ "title": "Dune: Part Two", "subtitle": "2024 · 2 h 46 min",
+ "poster": "https://…", "backdrop": "https://…", "logo": "https://…", "step": "Finding streams…"}
+```
+
+Sent as soon as the agent knows what it will play (the title is found), before the streams are, and again as the
+steps change. All fields are optional.
+
+| Field | Meaning |
+|---|---|
+| `item` | The `item` the `load` will have |
+| `heard` | What the user said, as transcribed; shown in quotes |
+| `title`, `subtitle` | `subtitle`: year and runtime for a film, "S4E1 · <episode name>" for an episode |
+| `poster`, `backdrop`, `logo` | Public artwork, as in `info`. The backdrop fills the screen (or the poster, without one); the logo takes the title's place once it's in. A picture that's missing or slow is left out: it never holds anything up |
+| `step` | What's happening: "Finding streams…", "Checking the link…", "Starting…". It may be an error ("No playable stream for …"): the agent then sends `stop` or another `loading` |
+
+A later `loading` for the same `item` changes what it has (usually only `step`); one for another item replaces it.
+The screen goes when the picture of the next `load` appears (whatever its `item`), on `osd ""` or on `stop`.
 
 ### `play`, `pause`, `toggle`
 
@@ -161,7 +185,7 @@ The answer has the fields of `state` and `pos`.
 {"t": "osd", "id": 11, "text": "Finding Breaking Bad…", "ms": 0}
 ```
 
-`ms` is how long it stays: 0 means until the next `osd` or `load`; `""` clears it.
+`ms` is how long it stays: 0 means until the next `osd` or `load`; `""` clears it, and the loading screen too.
 
 ### `bench`: measure
 
