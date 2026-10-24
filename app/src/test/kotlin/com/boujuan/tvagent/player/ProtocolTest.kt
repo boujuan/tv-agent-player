@@ -46,19 +46,20 @@ class ProtocolTest {
     }
 
     @Test
-    fun aHeldKeyStepsFasterTheLongerItsHeld() {
+    fun aHeldKeyGoesFasterTheLongerItsHeld() {
         val film = 2 * 3_600_000L
-        assertEquals(10_000, PlayerActivity.step(600, film))
-        assertEquals(30_000, PlayerActivity.step(2_000, film))
-        assertEquals(120_000, PlayerActivity.step(5_000, film))
-        assertEquals(60_000, PlayerActivity.step(5_000, 22 * 60_000L))     // a short episode: a minute at most
-        // Held from 0:00 (repeats start ~0.5 s in, a step every 0.2 s): half an hour of the film in ~6 s
-        var at = 0L
-        var held = 500L
-        while (at < 30 * 60_000L) {
-            at += PlayerActivity.step(held, film)
-            held += 200
+        assertEquals(20.0, PlayerActivity.speed(500, film), 0.01)
+        assertEquals(40.0, PlayerActivity.speed(1_500, film), 0.01)
+        assertEquals(480.0, PlayerActivity.speed(9_000, film), 0.01)            // a 15th of the film a second
+        assertEquals(90.0, PlayerActivity.speed(9_000, 22 * 60_000L), 0.01)     // a short episode
+        // Held from 0:00, the remote repeating every 50 ms from 0.5 s: fine at first, half an hour in ~7.5 s
+        fun heldFor(ms: Long): Long {
+            var at = 0.0
+            for (t in 550L..ms step 50) at += PlayerActivity.speed(t, film) * 50
+            return at.toLong()
         }
-        assertTrue("took $held ms", held in 5_500..7_000)
+        assertTrue(heldFor(1_500) < 45_000)
+        val half = (550L..20_000L step 50).first { heldFor(it) >= 30 * 60_000L }
+        assertTrue("took $half ms", half in 7_000..8_500)
     }
 }

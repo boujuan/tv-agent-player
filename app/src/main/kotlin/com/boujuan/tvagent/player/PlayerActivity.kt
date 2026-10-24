@@ -234,9 +234,9 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     }
 
     /**
-     * A press jumps at once (−10 s / +30 s). Held, the target moves on the bar without seeking, faster the longer it's
-     * held, and one exact seek goes there when the key is let go: a seek per step cancelled the one before's read, so
-     * neither the picture nor the time moved until the key came up (2026-10-24).
+     * A press jumps at once (−10 s / +30 s). Held, the target glides along the bar without seeking, faster the longer
+     * it's held, and one exact seek goes there when the key is let go: a seek per step cancelled the one before's read,
+     * so neither the picture nor the time moved until the key came up (2026-10-24).
      */
     private fun jump(event: KeyEvent, direction: Int) {
         if (event.repeatCount == 0) {
@@ -247,14 +247,15 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         val now = event.eventTime
         if (scrub == C.TIME_UNSET) {
             scrub = engine.player.currentPosition            // the press's jump target while it's being sought
-            stepAt = 0
+            movedAt = now
         }
         main.removeCallbacks(letGoLater)
         main.postDelayed(letGoLater, LET_GO_MS)
-        if (now - stepAt < STEP_EVERY_MS) return
-        stepAt = now
+        // Moved by the time since the last repeat (~50 ms), so the bar glides however often the remote repeats.
         val dur = engine.player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
-        scrub = (scrub + direction * step(now - event.downTime, dur)).coerceIn(0, dur)
+        val dt = (now - movedAt).coerceIn(0, 200)
+        movedAt = now
+        scrub = (scrub + (direction * speed(now - event.downTime, dur) * dt).toLong()).coerceIn(0, dur)
     }
 
     private fun letGo() {
@@ -271,7 +272,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     }
 
     private var scrub = C.TIME_UNSET                         // the target while ← or → is held
-    private var stepAt = 0L
+    private var movedAt = 0L
     // No key-up seen (the remote's lost, a key-up that never came): the hold ends where it got to.
     private val letGoLater = Runnable { letGo() }
 
@@ -345,19 +346,18 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         private const val TAG = "Player"
         private const val BAR_MS = 4_000L
         private const val IDLE_MS = 60_000L
-        private const val STEP_EVERY_MS = 200L
         private const val LET_GO_MS = 700L
         private val JUMP_KEYS = setOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
 
         /**
-         * How far the target moves each STEP_EVERY_MS of a hold that began `heldMs` ago: 10 s steps for fine moves,
-         * 30 s from 1.5 s, then a 60th of the file (at least a minute): half an hour of a 2-hour film in ~6 s held.
+         * How fast the target moves (film per real time) a hold that began `heldMs` ago: 20× when the repeats start,
+         * doubling every second, up to a 15th of the file a second (8 min/s for a 2-hour film; at least 90×). Half an
+         * hour of a 2-hour film takes ~7.5 s held; the first seconds stay fine enough to place a scene.
          */
-        fun step(heldMs: Long, durMs: Long): Long = when {
-            heldMs < 1_500 -> 10_000
-            heldMs < 4_000 -> 30_000
-            else -> maxOf(60_000, durMs.coerceAtMost(24 * 3_600_000L) / 60)
+        fun speed(heldMs: Long, durMs: Long): Double {
+            val most = maxOf(90.0, durMs.coerceAtMost(24 * 3_600_000L) / 15_000.0)
+            return minOf(most, 20.0 * Math.pow(2.0, (heldMs - 500).coerceAtLeast(0) / 1000.0))
         }
 
         fun clock(ms: Long): String {
