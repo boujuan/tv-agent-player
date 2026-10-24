@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioTrack
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Clock
 import androidx.media3.exoplayer.audio.AudioOutput
 import androidx.media3.exoplayer.audio.AudioOutputProvider
@@ -27,8 +28,12 @@ class AudioRoute(context: Context) : AudioOutputProvider {
     private var last: AudioOutputProvider.FormatConfig? = null
     private val forward = AudioOutputProvider.Listener { if (!quiet) listeners.forEach { it.onFormatSupportChanged() } }
 
+    /** Only PCM taken, while the speed isn't normal (Engine.speed): a bitstream would stay at normal speed. */
+    @Volatile var pcmOnly = false
+
     override fun getFormatSupport(formatConfig: AudioOutputProvider.FormatConfig): AudioOutputProvider.FormatSupport {
         last = formatConfig
+        if (pcmOnly && formatConfig.format.sampleMimeType != MimeTypes.AUDIO_RAW) return AudioOutputProvider.FormatSupport.UNSUPPORTED
         return inner.getFormatSupport(formatConfig)
     }
 

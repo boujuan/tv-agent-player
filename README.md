@@ -36,6 +36,16 @@ tv-agent tv install app-release.apk
 That installs it over ADB, compiles it ahead of time, and pairs it: the app learns the agent's address, its own
 token and the agent's certificate fingerprint. `tv-agent tv pair` pairs again (after a new token, or a new address).
 
+## As Stremio's external player
+
+It also works on its own, without tv-agent, as another app's external player. In Stremio, set Settings › Playback ›
+Default player to **External** (or pick External from the player's menu): Android's "Open with" then lists TV Agent
+Player next to the other players. It plays the link from where Stremio says, with the file's own audio and
+subtitles (Stremio sends no others), and gives Stremio the position back when you leave, which Stremio saves as
+progress; at the end of a file Stremio goes on to the next episode. For a torrent, Stremio asks for its streaming
+server to run in the background first. Voice control doesn't reach a film opened this way: tv-agent didn't start
+it, so it can't know what it is.
+
 ## Build
 
 JDK 17 and the Android SDK with Platform 37.0; `local.properties` with `sdk.dir=…`, which isn't committed. The Gradle

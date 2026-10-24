@@ -3,6 +3,32 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.6.0 — 2026-10-24
+
+### Added
+- Stremio's external player: TV Agent Player is listed in Android's "Open with" when Stremio's player is set to
+  External, and plays the link by itself (ExternalPlayerActivity; tv-agent isn't involved). It starts where Stremio
+  says (`position` / `startfrom`) and gives back the position and length as MX Player does (`extra_position`,
+  `extra_duration`, `end_by`), which Stremio saves as progress; at the end Stremio goes on to the next episode.
+- Controls under the time bar, as in Stremio's player: play/pause, back and ahead, the previous and next episode (a
+  series, with tv-agent), subtitles, audio, speed, picture size and Settings. ↓ goes into them while the bar is up,
+  ←/→ move, OK uses one, ↑ or Back leaves; the time is next to them ("20:23 / 2:35:26").
+- A subtitles panel, see-through over the top of the picture: the languages on the left, that language's tracks in
+  the middle (the file's and add-ons'), and the timing and look on the right. Timing moves this file's subtitles
+  later or sooner in 0.1 s steps (up to 10 s); size, height, colour, background, edges and font change on a sample
+  line as they're picked.
+- Speed, from 0.5× to 2×. A bitstream (DD+, DTS) is decoded on the TV while the speed isn't normal, and goes back to
+  the receiver at normal speed; TrueHD, which the TV can't decode, says so.
+- Picture size: fit, fill (stretched) or zoom (cropped).
+
+### Changed
+- The time bar is thin with a round thumb (Media3's DefaultTimeBar), the title above it.
+- Subtitles rise above the time bar while it's up, instead of running behind it.
+- The badges show once: in the pause screen's corner, no longer on the bar as well.
+- The pause screen keeps its information (the clock, when it ends, the logo, year and length, the plot, the source
+  and the file); its row of pills is now the controls under the bar, and the file's line has room for four lines
+  where it was cut after two.
+
 ## 0.5.0 — 2026-10-24
 
 ### Added

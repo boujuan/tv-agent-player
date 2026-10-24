@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TV Agent Player</string>
+    <string name="not_a_link">This isn\'t a video link TV Agent Player can open</string>
+    <string name="cant_play">Can\'t play this file (%1$s)</string>
     <string name="not_paired">Not paired with tv-agent: run `tv-agent tv pair` on the computer</string>
     <string name="connecting">Connecting to tv-agent…</string>
     <string name="refused">tv-agent refused this player (%1$s): pair it again with `tv-agent tv pair`</string>
@@ -36,6 +38,37 @@
     <string name="jump_forward">→ jumps ahead</string>
     <string name="held_speed">Held ←/→ speed</string>
     <string name="badges_after_load">Badges on the bar at the start</string>
+    <string name="languages">Language</string>
+    <string name="subtitle_settings">Timing and look</string>
+    <string name="subtitle_delay">Timing</string>
+    <string name="delay_value">%1$+.1f s</string>
+    <string name="delay_none">In sync</string>
+    <string name="no_subtitles">No subtitles in this file</string>
+    <string name="subtitles_off">Subtitles off</string>
+    <string name="adjust">‹  %1$s  ›</string>
+    <string name="speed">Speed</string>
+    <string name="speed_bitstream">%1$s goes to the receiver as it is and can\'t change speed: pick another audio track first</string>
+    <string name="picture">Picture size</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="jump_back_control">Back</string>
+    <string name="jump_ahead_control">Ahead</string>
+    <string name="previous_episode">Previous episode</string>
+    <string name="next_episode">Next episode</string>
+    <string name="time_of">%1$s / %2$s</string>
+    <string-array name="playback_speeds">
+        <item>0.5×</item>
+        <item>0.75×</item>
+        <item>Normal</item>
+        <item>1.25×</item>
+        <item>1.5×</item>
+        <item>2×</item>
+    </string-array>
+    <string-array name="pictures">
+        <item>Fit</item>
+        <item>Fill the screen (stretched)</item>
+        <item>Zoom (cropped)</item>
+    </string-array>
     <string-array name="sizes">
         <item>Extra small</item>
         <item>Small</item>

@@ -27,8 +27,11 @@ class Settings(private val context: Context) {
     operator fun get(o: Option): Int = prefs.getInt(o.key, o.default).takeIf { it in o.values } ?: o.default
     operator fun set(o: Option, v: Int) = prefs.edit().putInt(o.key, v).apply()
 
-    /** Subtitles as set, from the TV's captions settings for what's left "As the TV". */
-    fun styleSubtitles(view: SubtitleView) {
+    /**
+     * Subtitles as set, from the TV's captions settings for what's left "As the TV"; at least `above` (a fraction of
+     * the height) from the bottom, so they clear the time bar while it's up.
+     */
+    fun styleSubtitles(view: SubtitleView, above: Float = 0f) {
         // As SubtitleView's own setUserDefaultStyle and setUserDefaultTextSize read them.
         val captions = context.getSystemService(CaptioningManager::class.java)?.takeIf { it.isEnabled }
         val tv = captions?.let { CaptionStyleCompat.createFromCaptionStyle(it.userStyle) } ?: CaptionStyleCompat.DEFAULT
@@ -64,7 +67,7 @@ class Settings(private val context: Context) {
                 else -> tv.typeface
             }))
         view.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * (captions?.fontScale ?: 1f) * get(SUB_SIZE) / 100f)
-        view.setBottomPaddingFraction(get(SUB_PLACE) / 100f)
+        view.setBottomPaddingFraction(maxOf(get(SUB_PLACE) / 100f, above))
     }
 
     companion object {

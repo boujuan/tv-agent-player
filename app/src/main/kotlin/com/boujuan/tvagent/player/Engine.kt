@@ -23,6 +23,8 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.Renderer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioCapabilities
@@ -33,6 +35,7 @@ import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
 import androidx.media3.exoplayer.source.preload.PreloadException
 import androidx.media3.exoplayer.source.preload.PreloadManagerListener
+import androidx.media3.exoplayer.text.TextOutput
 import org.json.JSONArray
 import java.io.IOException
 import org.json.JSONObject
@@ -66,6 +69,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private val routes = ArrayList<AudioRoute>(2)      // the same
     private val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build()
     private var preloadStart = 0L
+    private val delay = TextDelay()
     private val builder = DefaultPreloadManager.Builder(context) { _: Int ->
         DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(preloadStart, PRELOAD_MS)
     }
@@ -75,6 +79,13 @@ class Engine(private val context: Context, private val host: Host) : Player.List
                 DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
                     .setAudioOutputProvider(AudioRoute(context).also(routes::add)).build()
+
+            override fun buildTextRenderers(context: Context, output: TextOutput, outputLooper: Looper,
+                                            extensionRendererMode: Int, out: ArrayList<Renderer>) {
+                val from = out.size
+                super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+                for (i in from until out.size) out[i] = Delayed(out[i], delay)
+            }
         }.setMediaCodecSelector(Codecs.selector).setEnableDecoderFallback(true))
         .setTrackSelectorFactory { Selector(it).also(selectors::add) }
         .setLoadControl(loading)
@@ -157,6 +168,8 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
         loadErrorSent = false
         forgetBitstream()
+        delay.ms = 0
+        normalSpeed()
         external.clear()
         host.onCues(emptyList())
         bitrateKnown = cmd.optLong("bitrate", 0) > 0
@@ -247,6 +260,46 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
     fun volume(level: Double) {
         player.volume = level.toFloat().coerceIn(0f, 1f)
+    }
+
+    /** Subtitles shown this much later (sooner when negative), for this file; 0 again with each load. */
+    var subtitleDelayMs: Long
+        get() = delay.ms
+        set(ms) {
+            delay.ms = ms
+            followSubs()
+        }
+
+    val speed get() = player.playbackParameters.speed
+
+    /**
+     * The speed, from the controls. A bitstream can't be sped up (Media3 keeps it at normal speed), so while it isn't
+     * normal the TV decodes the sound (AudioRoute.pcmOnly) and it goes back to a bitstream at normal speed. False,
+     * nothing changed, when the TV has no decoder for it (TrueHD).
+     */
+    fun speed(s: Float): Boolean {
+        val f = audioFormat
+        if (s != 1f && passthrough && (f == null || !Codecs.decodes(f.sampleMimeType))) return false
+        player.setPlaybackSpeed(s)
+        val pcm = s != 1f && (passthrough || route.pcmOnly)
+        if (pcm != route.pcmOnly) {
+            route.pcmOnly = pcm
+            reopenAudio()
+        }
+        return true
+    }
+
+    private fun normalSpeed() {
+        if (player.playbackParameters.speed != 1f) player.setPlaybackSpeed(1f)
+        route.pcmOnly = false
+    }
+
+    /** The route read again (on the playback thread) and the audio renderer alone off and on: the picture isn't touched. */
+    private fun reopenAudio() {
+        Handler(player.playbackLooper).post(route::refresh)
+        val params = player.trackSelectionParameters
+        player.trackSelectionParameters = params.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+        player.trackSelectionParameters = params
     }
 
     /** The tracks as the agent sees them (PROTOCOL.md, Track); `i` is what `select` takes. */
@@ -446,7 +499,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     // Subtitles from elsewhere follow the position while they're shown: 20 times a second while the picture moves.
     private val subsTick = object : Runnable {
         override fun run() {
-            external.cuesAt(player.currentPosition * 1000)?.let(host::onCues)
+            external.cuesAt((player.currentPosition - delay.ms) * 1000)?.let(host::onCues)
             if (external.shown >= 0) main.postDelayed(this, if (player.isPlaying) 50 else 250)
         }
     }
@@ -587,6 +640,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
         val f = audioFormat
         val pcm = Codecs.isPcm(audioTrackConfig.encoding)
+        passthrough = !pcm
         val out = if (pcm) "pcm" else "passthrough"
         Log.i(TAG, "audio: ${f?.sampleMimeType} ${f?.channelCount} ch → $out ${Codecs.encoding(audioTrackConfig.encoding)}")
         val event = msg("audio", "item" to item?.id, "mime" to f?.sampleMimeType, "ch" to f?.channelCount,
@@ -641,6 +695,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
     // ---- the bitstream back after the TV's audio dropped it (AudioRoute) ----
 
+    private var passthrough = false                     // the sound goes out as a bitstream now
     private var hadBitstream = false                    // this item's audio has gone out as a bitstream
     private var sinkError: String? = null               // the last audio write or start that failed, this item
     private var lostAt = 0L                             // decoded to PCM since then, else 0
@@ -667,10 +722,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
             }
             Log.i(TAG, "bitstream: the route takes ${f.sampleMimeType} again, switching back")
             switchAt = System.currentTimeMillis()
-            Handler(player.playbackLooper).post(route::refresh)
-            val params = player.trackSelectionParameters
-            player.trackSelectionParameters = params.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
-            player.trackSelectionParameters = params
+            reopenAudio()
         }
     }
 
@@ -730,4 +782,15 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         /** Error text without anything that looks like a link (they carry the debrid key). */
         fun scrub(text: String): String = text.replace(Regex("[a-z][a-z0-9+.-]*://\\S+", RegexOption.IGNORE_CASE), "<link>")
     }
+}
+
+/** The subtitle delay, read by the text renderers on the playback thread. */
+class TextDelay {
+    @Volatile var ms = 0L
+}
+
+/** A text renderer given the position less the delay: its lines come that much later (sooner when negative). */
+private class Delayed(renderer: Renderer, private val delay: TextDelay) : ForwardingRenderer(renderer) {
+    override fun render(positionUs: Long, elapsedRealtimeUs: Long) =
+        super.render(positionUs - delay.ms * 1000, elapsedRealtimeUs)
 }

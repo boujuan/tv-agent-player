@@ -89,6 +89,10 @@ object Codecs {
         else -> "encoding-$encoding"
     }
 
+    /** Whether the TV can decode this audio (DD, DD+, DTS: yes; TrueHD: no), for a speed other than normal. */
+    fun decodes(mime: String?): Boolean = mime != null &&
+        runCatching { MediaCodecUtil.getDecoderInfos(mime, false, false).isNotEmpty() }.getOrDefault(false)
+
     fun isPcm(encoding: Int) = encoding == C.ENCODING_PCM_16BIT || encoding == C.ENCODING_PCM_FLOAT ||
         encoding == C.ENCODING_PCM_24BIT || encoding == C.ENCODING_PCM_32BIT || encoding == C.ENCODING_PCM_8BIT
 }
