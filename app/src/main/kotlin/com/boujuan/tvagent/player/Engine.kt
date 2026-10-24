@@ -11,6 +11,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -24,7 +25,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
@@ -58,25 +61,31 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private val main = Handler(Looper.getMainLooper())
     private val loading = Loading.build()
     private val selectors = ArrayList<Selector>(2)     // the player's, then the preload's (made in that order)
+    private val routes = ArrayList<AudioRoute>(2)      // the same
+    private val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build()
     private var preloadStart = 0L
     private val builder = DefaultPreloadManager.Builder(context) { _: Int ->
         DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(preloadStart, PRELOAD_MS)
     }
         .setDataSourceFactory(http.dataSourceFactory)
-        .setRenderersFactory(DefaultRenderersFactory(context).setMediaCodecSelector(Codecs.selector)
-            .setEnableDecoderFallback(true))
+        .setRenderersFactory(object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
+                DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioOutputPlaybackParameters(enableAudioOutputPlaybackParams)
+                    .setAudioOutputProvider(AudioRoute(context).also(routes::add)).build()
+        }.setMediaCodecSelector(Codecs.selector).setEnableDecoderFallback(true))
         .setTrackSelectorFactory { Selector(it).also(selectors::add) }
         .setLoadControl(loading)
     val player: ExoPlayer = builder.buildExoPlayer(
         ExoPlayer.Builder(context)
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
-                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
+            .setAudioAttributes(attributes, true)
             .setHandleAudioBecomingNoisy(false)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setUsePlatformDiagnostics(true))         // `dumpsys media.metrics`: frames, drops, freezes per file
     private val preloads = builder.build()
     private val selector = player.trackSelector as Selector
     private val preloadSelector = selectors.first { it !== selector }
+    private val route = routes.first()
     private val external = ExternalSubs()
     private val work = Executors.newSingleThreadExecutor { Thread(it, "subs").apply { priority = Thread.MIN_PRIORITY } }
 
@@ -140,6 +149,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         stats = Http.Stats(url, now).also { http.stats = it }
         preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
         loadErrorSent = false
+        forgetBitstream()
         external.clear()
         host.onCues(emptyList())
         bitrateKnown = cmd.optLong("bitrate", 0) > 0
@@ -359,6 +369,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         host.send(posFields(msg("closed", "item" to it.id, "why" to why)))
         item = null
         http.stats = null
+        forgetBitstream()
         if (why != "replaced") {
             player.stop()
             player.clearMediaItems()
@@ -376,6 +387,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         main.removeCallbacks(tick)
         main.removeCallbacks(subsTick)
         main.removeCallbacks(collect)
+        main.removeCallbacks(checkRoute)
         preloads.release()
         player.release()
         work.shutdownNow()
@@ -466,7 +478,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
             bitrateKnown = true
             cap(length * 8 * 1000 / player.duration)
         }
-        host.send(tracks().put("t", "tracks").put("item", it.id))
+        if (switchAt == 0L) host.send(tracks().put("t", "tracks").put("item", it.id))   // a switch shows no audio for a moment
     }
 
     override fun onCues(cueGroup: CueGroup) {
@@ -564,11 +576,102 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
     override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
         val f = audioFormat
-        val out = if (Codecs.isPcm(audioTrackConfig.encoding)) "pcm" else "passthrough"
+        val pcm = Codecs.isPcm(audioTrackConfig.encoding)
+        val out = if (pcm) "pcm" else "passthrough"
         Log.i(TAG, "audio: ${f?.sampleMimeType} ${f?.channelCount} ch → $out ${Codecs.encoding(audioTrackConfig.encoding)}")
-        host.send(msg("audio", "item" to item?.id, "mime" to f?.sampleMimeType, "ch" to f?.channelCount,
+        val event = msg("audio", "item" to item?.id, "mime" to f?.sampleMimeType, "ch" to f?.channelCount,
             "rate" to audioTrackConfig.sampleRate, "out" to out, "encoding" to Codecs.encoding(audioTrackConfig.encoding),
-            "offload" to audioTrackConfig.offload))
+            "offload" to audioTrackConfig.offload)
+        val now = SystemClock.elapsedRealtime()
+        if (!pcm) {
+            hadBitstream = true
+            sinkError = null
+            if (lostAt > 0) {
+                Log.i(TAG, "bitstream back after ${now - lostAt} ms of PCM")
+                event.put("dropout", "restored").put("pcm_ms", now - lostAt)
+                lostAt = 0
+                main.removeCallbacks(checkRoute)
+                if (switchAt > 0) {
+                    restored = event                    // sent once it plays, with the gap
+                    item?.let { host.send(tracks().put("t", "tracks").put("item", it.id)) }
+                    return
+                }
+            }
+        } else if (switchAt > 0) {
+            // Switched back, and the route took only PCM after all: tried again later.
+            Log.w(TAG, "bitstream: still PCM after switching back")
+            switchAt = 0
+            item?.let { host.send(tracks().put("t", "tracks").put("item", it.id)) }
+            main.removeCallbacks(checkRoute)
+            main.postDelayed(checkRoute, ROUTE_CHECK_MS * 10)
+        } else if (f != null && f.sampleMimeType != MimeTypes.AUDIO_RAW && hadBitstream && sinkError != null && lostAt == 0L) {
+            // Decoded where it went out as a bitstream before, after a write or start that failed: Media3 now takes
+            // the route for stereo PCM (AudioRoute). Checked until the route takes the format again.
+            Log.w(TAG, "bitstream lost ($sinkError): ${f.sampleMimeType} decoded to PCM")
+            lostAt = now
+            event.put("dropout", "lost").put("cause", sinkError)
+            main.removeCallbacks(checkRoute)
+            main.postDelayed(checkRoute, ROUTE_CHECK_MS)
+        }
+        host.send(event)
+    }
+
+    override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
+        val event = restored ?: return
+        restored = null
+        host.send(event.put("gap_ms", (playoutStartSystemTimeMs - switchAt).coerceAtLeast(0)))
+        switchAt = 0
+    }
+
+    override fun onAudioSinkError(eventTime: AnalyticsListener.EventTime, audioSinkError: Exception) {
+        val cause = AudioRoute.cause(audioSinkError) ?: return
+        Log.w(TAG, "audio sink: $cause")
+        sinkError = cause
+    }
+
+    // ---- the bitstream back after the TV's audio dropped it (AudioRoute) ----
+
+    private var hadBitstream = false                    // this item's audio has gone out as a bitstream
+    private var sinkError: String? = null               // the last audio write or start that failed, this item
+    private var lostAt = 0L                             // decoded to PCM since then, else 0
+    private var switches = 0
+    private var switchAt = 0L                           // System.currentTimeMillis() at the switch back, else 0
+    private var restored: JSONObject? = null            // its `audio` event, until the sound plays
+
+    /**
+     * Once a second while it's PCM: when the route takes the format again, the route is read again (refresh, on the
+     * playback thread) and the audio renderer alone goes off and on, so it starts again as a bitstream. The picture
+     * isn't touched; the audio is read from memory (12 s are kept behind the position).
+     */
+    private val checkRoute = object : Runnable {
+        override fun run() {
+            val f = audioFormat
+            if (lostAt == 0L || item == null || released || f == null) return
+            if (!AudioCapabilities.getCapabilities(context, attributes, null, emptyList()).isPassthroughPlaybackSupported(f, attributes)) {
+                main.postDelayed(this, ROUTE_CHECK_MS)
+                return
+            }
+            if (switches++ >= MAX_SWITCHES) {            // it keeps dropping: PCM it stays
+                Log.w(TAG, "bitstream: not switching back again")
+                return
+            }
+            Log.i(TAG, "bitstream: the route takes ${f.sampleMimeType} again, switching back")
+            switchAt = System.currentTimeMillis()
+            Handler(player.playbackLooper).post(route::refresh)
+            val params = player.trackSelectionParameters
+            player.trackSelectionParameters = params.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true).build()
+            player.trackSelectionParameters = params
+        }
+    }
+
+    private fun forgetBitstream() {
+        hadBitstream = false
+        sinkError = null
+        lostAt = 0
+        switches = 0
+        switchAt = 0
+        restored = null
+        main.removeCallbacks(checkRoute)
     }
 
     /**
@@ -597,6 +700,8 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         private const val TAG = "Engine"
         private const val PRELOAD_MS = 4_000L
         private const val MERGE_SEEKS_MS = 1_000L
+        private const val ROUTE_CHECK_MS = 1_000L
+        private const val MAX_SWITCHES = 3
 
         private fun headers(cmd: JSONObject): Map<String, String> {
             val h = cmd.optJSONObject("headers") ?: return emptyMap()
