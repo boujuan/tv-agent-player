@@ -3,6 +3,18 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.2.0 — 2026-10-24
+
+### Changed
+- Holding ← or → no longer seeks on the way. The target glides along the time bar, with how far it is from the
+  picture ("+6:12"), faster the longer the key is held, and one exact seek goes there when the key comes up. Before,
+  each step's seek cancelled the last one's read, so neither the picture nor the time moved until the key was let go.
+  A short press still jumps at once (−10 s / +30 s).
+
+### Not done
+- Thumbnails while seeking: on this TV a second decoder can't decode a 4K frame while the film plays (measured;
+  DESIGN.md, "Previews while seeking").
+
 ## 0.1.1 — 2026-10-24
 
 ### Fixed

@@ -196,6 +196,33 @@ from the file's bitrate instead, within a budget:
   which stops the player and saves the position.
 - Back stops and closes; Home stops. The remote's play/pause, OK, left and right work on the player directly
   (−10 s / +30 s); next and previous are passed to the agent as `key` events.
+- Held left or right moves a target along the time bar without seeking, and one exact seek goes there when the key
+  comes up. It glides: each repeat of the key (~20 a second) moves it by the time since the last one, at 20× the
+  film's speed when the repeats start, doubling every second, up to a 15th of the film a second. A few seconds place
+  a scene; half an hour of a two-hour film takes ~7.5 s. Seeking at every step, as 0.1.x did, cancelled the previous
+  step's read each time, so neither the picture nor the time moved until the key came up.
+
+## Previews while seeking
+
+Debrid files have no thumbnails, so a preview would have to be decoded from the file: the keyframe before the target
+(an MKV's Cues give its offset), one range read, and a second decoder for it while the film plays. Measured on the TV
+on 2026-10-24 during a 4K DV play (Dune Part Two WEB-DL on `c2.mtk.dvhe.st`), with a test build that decoded a 4K Main 10
+HEVC keyframe on a second `c2.mtk.hevc.decoder` ten times:
+
+- The second decoder is created, configured and started (the codec list allows 16 and 8K at 60 fps), but its first
+  frame fails: the vendor's resource manager logs `1hw + 1sw (>fhd), AN RM decide` and the work ends with error -12,
+  for a 147 KB and a 2.1 MB keyframe alike. This TV decodes one stream above 1080p in hardware at a time, so a 4K
+  keyframe can't be decoded beside the film.
+- The software HEVC decoder lists Main profile only (no Main 10), and a profile 5 file's base layer is in Dolby's IPT
+  colours, which only the DV decoder's composer turns into a picture.
+- Trying cost the film 3 dropped frames and 2 short freezes in that 72 s, against 0–2 and at most one in the plays
+  without it.
+- Even with a decoder, each preview would be a range read of 0.3–3 MB (~0.5 s, the bench's open + 1 MB) while the
+  buffer fills, and an HDR or DV keyframe needs tone mapping to look right on the menus' layer.
+
+So there are no previews on the TV. The way that costs the TV nothing is the agent's: the computer reads the keyframe
+(ffmpeg seeks with the Cues: one range read), tone-maps it (libplacebo applies a profile 5 file's reshaping too) and
+sends a small JPEG; the player would only show a picture of a few kilobytes. That's a new command, not done yet.
 
 ## Tracks and subtitles
 
@@ -225,3 +252,4 @@ already has the right ones: no switch after the start, and no recheck eight seco
 | Tunneling | No decoder offers it (the tests) |
 | A foreground service to stay warm | It would hold memory all day on a TV that's short of it; the screen starts during the stream lookup anyway |
 | Compose, AppCompat, media3-session, Cronet from Play services | Size and startup for nothing this app draws or needs; the platform has a session and an HTTP engine already |
+| Thumbnails while seeking, decoded on the TV | Its one hardware decoder above 1080p is the film's ([above](#previews-while-seeking)) |
