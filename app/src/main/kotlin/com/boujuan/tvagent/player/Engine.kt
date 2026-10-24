@@ -52,10 +52,12 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         fun onCues(cues: List<Cue>)
         /** Position, state or title changed: the time bar and the media session follow. */
         fun onChanged()
+        /** The picture of a new load is up: the loading screen goes. */
+        fun onFirstFrame()
     }
 
-    /** The file loaded now, as the agent named it. */
-    class Item(val url: String, val id: String?, val title: String?, val loadedAt: Long)
+    /** The file loaded now, as the agent named it, and what the pause screen says about it (`info`). */
+    class Item(val url: String, val id: String?, val title: String?, val loadedAt: Long, val info: Info?)
 
     val http = Http(context)
     private val main = Handler(Looper.getMainLooper())
@@ -93,7 +95,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         private set
     private var preloaded: Preload? = null
     private class Preload(val item: MediaItem, val url: String, val id: String?, val plan: Selector.Plan,
-                          val since: Long, var readyMs: Long = -1)
+                          val info: Info?, val since: Long, var readyMs: Long = -1)
 
     // Timing of the current load and seek (the `timing` and `first_frame` events)
     private var stats: Http.Stats? = null
@@ -104,11 +106,14 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private var loadsSinceSeek = 0
     private var seekByTarget = C.TIME_UNSET
     private var seekByAt = 0L
-    private var videoFormat: Format? = null
+    /** The playing video and audio formats (the badges are made from them). */
+    var videoFormat: Format? = null
+        private set
     private var videoDecoder: String? = null
     private var decoderInitMs = 0L
     private var bitrateKnown = false
-    private var audioFormat: Format? = null
+    var audioFormat: Format? = null
+        private set
     private var released = false
 
     init {
@@ -143,7 +148,9 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         if (previous != null && previous.url != url && preloaded?.url != previous.url) http.forget(previous.url)
         val now = SystemClock.elapsedRealtime()
         val start = cmd.optLong("start_ms", 0).coerceAtLeast(0)
-        val it = Item(url, cmd.optString("item").ifEmpty { null }, cmd.optString("title").ifEmpty { null }, now)
+        val ready = preloaded?.takeIf { p -> p.url == url }
+        val it = Item(url, cmd.optString("item").ifEmpty { null }, cmd.optString("title").ifEmpty { null }, now,
+            Info.of(cmd.optJSONObject("info")) ?: ready?.info)
         item = it
         http.route(url, headers(cmd), stackOf(cmd))
         stats = Http.Stats(url, now).also { http.stats = it }
@@ -157,7 +164,6 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         selector.plan = plan(cmd)
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
-        val ready = preloaded?.takeIf { p -> p.url == url }
         val source = ready?.let { p -> preloads.getMediaSource(p.item) }
         usedPreload = source != null
         if (source != null) player.setMediaSource(source, start)
@@ -175,7 +181,8 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         dropPreload()
         http.route(url, headers(cmd), stackOf(cmd))
         val mediaItem = MediaItem.Builder().setUri(url).setMediaId("preload:" + (cmd.optString("item").ifEmpty { url.hashCode().toString() })).build()
-        val p = Preload(mediaItem, url, cmd.optString("item").ifEmpty { null }, plan(cmd), SystemClock.elapsedRealtime())
+        val p = Preload(mediaItem, url, cmd.optString("item").ifEmpty { null }, plan(cmd), Info.of(cmd.optJSONObject("info")),
+            SystemClock.elapsedRealtime())
         preloadSelector.plan = p.plan
         preloadStart = cmd.optLong("start_ms", 0).coerceAtLeast(0)
         preloaded = p
@@ -506,6 +513,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         if (firstFrameMs < 0) {
             firstFrameMs = now - it.loadedAt
             host.send(msg("first_frame", "item" to it.id, "after" to "load", "ms" to firstFrameMs))
+            host.onFirstFrame()
             if (player.playbackState == Player.STATE_READY && preparedMs >= 0) sendTiming(it)
         } else if (seekAt > 0) {
             host.send(msg("first_frame", "item" to it.id, "after" to "seek", "ms" to now - seekAt,

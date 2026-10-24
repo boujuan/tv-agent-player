@@ -5,4 +5,5 @@
     <string name="connecting">Connecting to tv-agent…</string>
     <string name="refused">tv-agent refused this player (%1$s): pair it again with `tv-agent tv pair`</string>
     <string name="paused">Paused</string>
+    <string name="heard">“%1$s”</string>
 </resources>

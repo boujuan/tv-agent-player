@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Into the window's own FrameLayout: the picture (a SurfaceView: DV and HDR need the hardware overlay plane), subtitles over it, a centred message
-     and a time bar shown on remote presses. Nothing else is drawn. -->
+<!-- Into the window's own FrameLayout: the picture (a SurfaceView: DV and HDR need the hardware overlay plane), subtitles over it,
+     the loading screen (inflated when first shown), a centred message and a time bar shown on remote presses. -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
     <androidx.media3.ui.AspectRatioFrameLayout
@@ -19,6 +19,13 @@
         android:id="@+id/subtitles"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <ViewStub
+        android:id="@+id/loading_stub"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inflatedId="@+id/loading"
+        android:layout="@layout/loading" />
 
     <TextView
         android:id="@+id/message"

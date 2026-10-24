@@ -9,6 +9,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.SurfaceView
 import android.view.View
+import android.view.ViewStub
 import android.view.WindowManager
 import android.window.OnBackInvokedDispatcher
 import android.widget.ProgressBar
@@ -42,6 +43,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private lateinit var time: TextView
     private lateinit var duration: TextView
     private lateinit var progress: ProgressBar
+    private lateinit var artwork: Artwork
+    private lateinit var loading: LoadingScreen
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +63,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { shutDown("back") }
         engine = Engine(this, this)
         engine.attach(findViewById<SurfaceView>(R.id.surface))
+        artwork = Artwork(engine.http.userAgent)
+        loading = LoadingScreen(findViewById<ViewStub>(R.id.loading_stub), artwork)
         session = Session(this, engine.player, this)
         val pairing = Pairing.load(this)
         if (pairing == null) {
@@ -88,6 +93,7 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         main.removeCallbacksAndMessages(null)
         engine.release(why)
         session.release()
+        artwork.release()
         link?.close()
         // The buffer's blocks back to Android now, not once the runtime gets round to it (~30 s in the background):
         // the next app (the screensaver's Dolby Vision, another player) wants that memory.
@@ -121,7 +127,12 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
                 "load" -> {
                     engine.load(cmd)
                     say(null)
+                    artwork.keepOnly(engine.item?.id, loading.item)
                     main.removeCallbacks(idle)
+                }
+                "loading" -> {
+                    loading.show(cmd)
+                    artwork.keepOnly(loading.item, engine.item?.id)
                 }
                 "preload" -> engine.preload(cmd)
                 "play" -> engine.play()
@@ -140,7 +151,11 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
                 "add_sub" -> return engine.addSub(cmd) { index, error -> ack(id, error, index?.let { JSONObject().put("text", it) }) }
                 "volume" -> volume(cmd)
                 "status" -> return ack(id, null, engine.status())
-                "osd" -> say(cmd.optString("text").ifEmpty { null }, cmd.optLong("ms", 0))
+                "osd" -> {
+                    val text = cmd.optString("text").ifEmpty { null }
+                    if (text == null) loading.hide()
+                    say(text, cmd.optLong("ms", 0))
+                }
                 "bench" -> {
                     Thread({
                         val result = try {
@@ -184,6 +199,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
             "closed", "ended" -> idleLater()
         }
     }
+
+    override fun onFirstFrame() = loading.hide()
 
     override fun onVideoAspect(ratio: Float) = frame.setAspectRatio(ratio)
 
