@@ -30,6 +30,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.source.preload.DefaultPreloadManager
@@ -78,10 +79,12 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private val attributes = AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build()
     private var preloadStart = 0L
     private val delay = TextDelay()
+    private val startRule = KeyframeStart.Rule()
     private val builder = DefaultPreloadManager.Builder(context) { _: Int ->
         DefaultPreloadManager.PreloadStatus.specifiedRangeLoaded(preloadStart, PRELOAD_MS)
     }
         .setDataSourceFactory(http.dataSourceFactory)
+        .setMediaSourceFactory(KeyframeStart.Factory(DefaultMediaSourceFactory(http.dataSourceFactory), startRule))
         .setRenderersFactory(object : DefaultRenderersFactory(context) {
             override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioOutputPlaybackParams: Boolean): AudioSink =
                 DefaultAudioSink.Builder(context).setEnableFloatOutput(enableFloatOutput)
@@ -187,6 +190,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         selector.plan = plan(cmd)
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+        startRule.exact = cmd.optBoolean("exact")       // a jump to a moment; a resume starts at its keyframe
         val source = ready?.let { p -> preloads.getMediaSource(p.item) }
         usedPreload = source != null
         if (source != null) player.setMediaSource(source, start)

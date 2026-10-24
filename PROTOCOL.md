@@ -73,6 +73,7 @@ except `bench`. Commands are applied in the order they arrive.
 | `audio` | ISO 639-2 language for the audio (`eng`, `spa`, `chs`/`cht` for the two Chinese scripts). Commentary and audio-description tracks are never chosen by language. Absent or null: the file's default track |
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
 | `play` | `false` loads it paused. Default `true` |
+| `exact` | `true`: start exactly at `start_ms` (a jump to a moment). Otherwise a start past 0 begins at the keyframe at or before it (at most 10 s earlier): the frames before it aren't decoded unseen |
 | `http` | `httpengine` (the default: Android's built-in Cronet) or `platform` (HttpURLConnection): the HTTP stack for this link, for measuring |
 | `info` | What the pause screen shows about it, kept with the item: `title`, `subtitle`, `plot`, `poster`, `backdrop`, `logo` (public artwork links: Cinemeta, metahub, TMDB; never a stream link), `source` (the add-on), `description` (the add-on's stream title, as text, links removed; the player removes any it finds too), `debrid`, `size` (bytes), `release` (the group), `badges` (what the file's header can't tell: `atmos`, `dtsx`, `hdr10+`, `imax`, `remux`). All optional |
 
