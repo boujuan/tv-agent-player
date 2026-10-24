@@ -178,6 +178,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         item = it
         http.route(url, headers(cmd), stackOf(cmd))
         stats = Http.Stats(url, now).also { http.stats = it }
+        if (ready == null) http.prefetch(url, prefetch(cmd))  // a preload has read its own already
         preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
         loadErrorSent = false
         forgetBitstream()
@@ -207,6 +208,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         require(url.startsWith("http://") || url.startsWith("https://")) { "only http(s) links" }
         dropPreload()
         http.route(url, headers(cmd), stackOf(cmd))
+        http.prefetch(url, prefetch(cmd))
         val mediaItem = MediaItem.Builder().setUri(url).setMediaId("preload:" + (cmd.optString("item").ifEmpty { url.hashCode().toString() })).build()
         val p = Preload(mediaItem, url, cmd.optString("item").ifEmpty { null }, plan(cmd), Info.of(cmd.optJSONObject("info")),
             SystemClock.elapsedRealtime(), markers = Marker.list(cmd.optJSONArray("markers")))
@@ -833,6 +835,15 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
         private fun stackOf(cmd: JSONObject): Http.Stack? =
             cmd.optString("http").ifEmpty { null }?.let { Http.Stack.valueOf(it.uppercase()) }
+
+        /** The agent's `prefetch`: (byte offset, length) of the parts of the file to read at once. */
+        fun prefetch(cmd: JSONObject): List<Pair<Long, Int>> {
+            val a = cmd.optJSONArray("prefetch") ?: return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                o.optLong("at", -1) to o.optLong("bytes", 0).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            }
+        }
 
         fun plan(cmd: JSONObject): Selector.Plan {
             val audio = if (cmd.isNull("audio")) null else cmd.optString("audio").ifEmpty { null }
