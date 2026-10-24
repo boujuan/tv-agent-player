@@ -202,7 +202,8 @@ from the file's bitrate instead, within a budget:
   film's speed when the repeats start, doubling every second, up to a 15th of the film a second. A few seconds place
   a scene; half an hour of a two-hour film takes ~7.5 s. Seeking at every step, as 0.1.x did, cancelled the previous
   step's read each time, so neither the picture nor the time moved until the key came up. Settings can make it
-  slower (0.6×) or faster (1.6×).
+  slower (0.6×) or faster (1.6×). While it's held, a picture of the target shows above the bar
+  ([below](#previews-while-seeking)).
 
 ## Screens
 
@@ -269,9 +270,34 @@ HEVC keyframe on a second `c2.mtk.hevc.decoder` ten times:
 - Even with a decoder, each preview would be a range read of 0.3–3 MB (~0.5 s, the bench's open + 1 MB) while the
   buffer fills, and an HDR or DV keyframe needs tone mapping to look right on the menus' layer.
 
-So there are no previews on the TV. The way that costs the TV nothing is the agent's: the computer reads the keyframe
-(ffmpeg seeks with the Cues: one range read), tone-maps it (libplacebo applies a profile 5 file's reshaping too) and
-sends a small JPEG; the player would only show a picture of a few kilobytes. That's a new command, not done yet.
+So the pictures are made on the computer, and the player only shows them (since 0.5.0; PROTOCOL.md, `thumb`):
+
+- While ← or → is held, the player asks tv-agent for the target (`thumb_req`): one request at a time, the next once
+  the target has moved a 50th of the film or 0.4 s after the last. The answer is a JPEG of a few kilobytes, 320 px
+  wide (a sixth of the 1920×1080 UI, drawn 1:1), decoded into graphics memory and shown above the bar at the
+  target. An answer that comes after the key is up, or to an older request, is dropped. The view is inflated with
+  the first picture and GONE, its picture let go, when the key comes up: nothing of it runs while a film plays.
+- tv-agent (`thumbs.py`) reads the file's header and its Cues once per file, 10 s after it opens; each picture is
+  then one range read of just the keyframe at or before the target (0.15–1.1 MB for this WEB-DL), given to ffmpeg
+  as a one-frame Matroska file on a pipe, and tone-mapped to SDR with libplacebo (which applies a profile 5 file's
+  reshaping too). Pictures are kept per keyframe. Running ffmpeg on the link itself took 2–5 s a picture: each run
+  read the header and the Cues again over four new connections.
+- Only Matroska files have previews (the agent says why otherwise, and the bar works as before).
+
+Measured on the TV on 2026-10-24, Dune Part Two (B, DV profile 8 WEB-DL) from 30:00 for 2 minutes, through the test
+harness (the agent's own code for the pictures):
+
+| | 0.4.0 | 0.5.0 |
+|---|---|---|
+| Nothing pressed: first frame, dropped frames, PSS at 60 s | 1.98 s; 1 dropped; 217 MB | 1.83 s; 2 dropped, one 100 ms freeze; 209 MB |
+| → held 6 s, ← 4 s, → 8 s: first frame, dropped frames, PSS after each hold | 1.91 s; 5 dropped, one freeze; 216–222 MB | 1.95 s; 2 dropped; 208–215 MB |
+| From asking to the picture on screen (24 pictures) | — | median 449 ms, 306–1148 ms; 20 ms for one already made |
+| The computer, per picture | — | median 506 ms; ffmpeg 346 ms of CPU (Ryzen 7 8845HS, libplacebo on the 780M) |
+
+The drops and freezes come with the seeks at the end of each hold, and vary from play to play as much as between
+these columns (0.1.1 and the screens' build had 0–2 and up to one freeze in plain plays). Nothing of the previews
+runs in a play where nothing is pressed. The first picture of that file took 2.6 s, waiting for its index: the agent
+now reads it 10 s after the file opens, so a hold's first picture comes as fast as the rest.
 
 ## Tracks and subtitles
 
