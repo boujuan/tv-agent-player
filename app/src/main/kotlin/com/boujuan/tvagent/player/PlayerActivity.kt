@@ -19,6 +19,7 @@ import androidx.media3.common.text.Cue
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.SubtitleView
 import org.json.JSONObject
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -211,8 +212,8 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> if (event.repeatCount == 0) engine.toggle()
             KeyEvent.KEYCODE_MEDIA_PLAY -> engine.play()
             KeyEvent.KEYCODE_MEDIA_PAUSE -> engine.pause()
-            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> jump(event, -10_000)
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> jump(event, 30_000)
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> jump(event, -1)
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> jump(event, 1)
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> {}
             KeyEvent.KEYCODE_MEDIA_NEXT -> key("next")
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> key("previous")
@@ -226,18 +227,57 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         return true
     }
 
-    /**
-     * A jump per press, and while the key is held one more every HELD_STEP_MS: the remote repeats a held key ~20
-     * times a second, and a jump each time ran half an hour ahead in a few seconds (found 2026-10-24).
-     */
-    private fun jump(event: KeyEvent, ms: Long) {
-        val now = event.eventTime
-        if (event.repeatCount > 0 && now - lastJumpAt < HELD_STEP_MS) return
-        lastJumpAt = now
-        engine.seekBy(ms, null)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (scrub == C.TIME_UNSET || keyCode !in JUMP_KEYS) return super.onKeyUp(keyCode, event)
+        if (event.isCanceled) dropScrub() else letGo()       // canceled: another window took the key mid-hold
+        return true
     }
 
-    private var lastJumpAt = 0L
+    /**
+     * A press jumps at once (−10 s / +30 s). Held, the target moves on the bar without seeking, faster the longer it's
+     * held, and one exact seek goes there when the key is let go: a seek per step cancelled the one before's read, so
+     * neither the picture nor the time moved until the key came up (2026-10-24).
+     */
+    private fun jump(event: KeyEvent, direction: Int) {
+        if (event.repeatCount == 0) {
+            if (scrub != C.TIME_UNSET) letGo()               // the other key while one was held
+            engine.seekBy(if (direction < 0) -10_000 else 30_000, null)
+            return
+        }
+        val now = event.eventTime
+        if (scrub == C.TIME_UNSET) {
+            scrub = engine.player.currentPosition            // the press's jump target while it's being sought
+            stepAt = 0
+        }
+        main.removeCallbacks(letGoLater)
+        main.postDelayed(letGoLater, LET_GO_MS)
+        if (now - stepAt < STEP_EVERY_MS) return
+        stepAt = now
+        val dur = engine.player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
+        scrub = (scrub + direction * step(now - event.downTime, dur)).coerceIn(0, dur)
+    }
+
+    private fun letGo() {
+        val to = scrub
+        dropScrub()
+        if (to != C.TIME_UNSET && engine.item != null) engine.seek(to, "exact")
+        showBar(BAR_MS)
+    }
+
+    private fun dropScrub() {
+        scrub = C.TIME_UNSET
+        main.removeCallbacks(letGoLater)
+        if (bar.visibility == View.VISIBLE) drawBar()
+    }
+
+    private var scrub = C.TIME_UNSET                         // the target while ← or → is held
+    private var stepAt = 0L
+    // No key-up seen (the remote's lost, a key-up that never came): the hold ends where it got to.
+    private val letGoLater = Runnable { letGo() }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        if (!hasFocus && scrub != C.TIME_UNSET) dropScrub()
+    }
 
     // ---- Session.Actions (media keys while the pill or a list is in front) ----
 
@@ -277,11 +317,16 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private fun drawBar() {
         val p = engine.player
         val dur = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0
-        title.text = if (p.playWhenReady) engine.item?.title.orEmpty()
-        else listOfNotNull(engine.item?.title, getString(R.string.paused)).joinToString(" · ")
-        time.text = clock(p.currentPosition)
+        val at = if (scrub != C.TIME_UNSET) scrub else p.currentPosition
+        val what = when {
+            scrub != C.TIME_UNSET -> (if (scrub < p.currentPosition) "−" else "+") + clock(abs(scrub - p.currentPosition))
+            !p.playWhenReady -> getString(R.string.paused)
+            else -> null
+        }
+        title.text = listOfNotNull(engine.item?.title, what).joinToString(" · ")
+        time.text = clock(at)
         duration.text = if (dur > 0) clock(dur) else ""
-        progress.progress = if (dur > 0) (p.currentPosition * 1000 / dur).toInt() else 0
+        progress.progress = if (dur > 0) (at * 1000 / dur).toInt() else 0
         progress.secondaryProgress = if (dur > 0) (p.bufferedPosition * 1000 / dur).toInt() else 0
         if (p.playbackState == Player.STATE_ENDED) bar.visibility = View.GONE
     }
@@ -300,7 +345,20 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         private const val TAG = "Player"
         private const val BAR_MS = 4_000L
         private const val IDLE_MS = 60_000L
-        private const val HELD_STEP_MS = 500L
+        private const val STEP_EVERY_MS = 200L
+        private const val LET_GO_MS = 700L
+        private val JUMP_KEYS = setOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
+
+        /**
+         * How far the target moves each STEP_EVERY_MS of a hold that began `heldMs` ago: 10 s steps for fine moves,
+         * 30 s from 1.5 s, then a 60th of the file (at least a minute): half an hour of a 2-hour film in ~6 s held.
+         */
+        fun step(heldMs: Long, durMs: Long): Long = when {
+            heldMs < 1_500 -> 10_000
+            heldMs < 4_000 -> 30_000
+            else -> maxOf(60_000, durMs.coerceAtMost(24 * 3_600_000L) / 60)
+        }
 
         fun clock(ms: Long): String {
             val s = ms / 1000

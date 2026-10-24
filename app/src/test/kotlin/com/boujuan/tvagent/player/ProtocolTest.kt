@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 
@@ -42,5 +43,22 @@ class ProtocolTest {
     fun clock() {
         assertEquals("0:05", PlayerActivity.clock(5_400))
         assertEquals("1:02:03", PlayerActivity.clock(3_723_000))
+    }
+
+    @Test
+    fun aHeldKeyStepsFasterTheLongerItsHeld() {
+        val film = 2 * 3_600_000L
+        assertEquals(10_000, PlayerActivity.step(600, film))
+        assertEquals(30_000, PlayerActivity.step(2_000, film))
+        assertEquals(120_000, PlayerActivity.step(5_000, film))
+        assertEquals(60_000, PlayerActivity.step(5_000, 22 * 60_000L))     // a short episode: a minute at most
+        // Held from 0:00 (repeats start ~0.5 s in, a step every 0.2 s): half an hour of the film in ~6 s
+        var at = 0L
+        var held = 500L
+        while (at < 30 * 60_000L) {
+            at += PlayerActivity.step(held, film)
+            held += 200
+        }
+        assertTrue("took $held ms", held in 5_500..7_000)
     }
 }
