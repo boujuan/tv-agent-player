@@ -199,10 +199,12 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
     fun play() {
         player.play()
+        host.onChanged()                            // the pause screen goes now, not at the next tick
     }
 
     fun pause() {
         player.pause()
+        host.onChanged()
     }
 
     fun toggle() {

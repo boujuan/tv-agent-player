@@ -5,6 +5,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.SurfaceView
@@ -12,6 +13,7 @@ import android.view.View
 import android.view.ViewStub
 import android.view.WindowManager
 import android.window.OnBackInvokedDispatcher
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.media3.common.C
@@ -43,8 +45,10 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     private lateinit var time: TextView
     private lateinit var duration: TextView
     private lateinit var progress: ProgressBar
+    private lateinit var barBadges: LinearLayout
     private lateinit var artwork: Artwork
     private lateinit var loading: LoadingScreen
+    private lateinit var pause: PauseScreen
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,13 +62,16 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         time = findViewById(R.id.time)
         duration = findViewById(R.id.duration)
         progress = findViewById(R.id.progress)
+        barBadges = findViewById(R.id.bar_badges)
         subtitles.setUserDefaultStyle()
-        subtitles.setUserDefaultTextSize()
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { shutDown("back") }
+        onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
+            if (!pause.back()) shutDown("back")
+        }
         engine = Engine(this, this)
         engine.attach(findViewById<SurfaceView>(R.id.surface))
         artwork = Artwork(engine.http.userAgent)
         loading = LoadingScreen(findViewById<ViewStub>(R.id.loading_stub), artwork)
+        pause = PauseScreen(findViewById<ViewStub>(R.id.pause_stub), artwork, engine, subtitles)
         session = Session(this, engine.player, this)
         val pairing = Pairing.load(this)
         if (pairing == null) {
@@ -131,13 +138,16 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
                     main.removeCallbacks(idle)
                 }
                 "loading" -> {
+                    pause.hide()
                     loading.show(cmd)
                     artwork.keepOnly(loading.item, engine.item?.id)
                 }
                 "preload" -> engine.preload(cmd)
                 "play" -> engine.play()
-                "pause" -> engine.pause()
-                "toggle" -> engine.toggle()
+                "pause", "toggle" -> {
+                    pauseAsked = SystemClock.uptimeMillis()
+                    if (t == "pause") engine.pause() else engine.toggle()
+                }
                 "stop" -> {
                     engine.close("stop")
                     ack(id, null, null)
@@ -197,10 +207,14 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
         link?.send(event)
         when (event.optString("t")) {
             "closed", "ended" -> idleLater()
+            "tracks" -> pause.tracksChanged()
         }
     }
 
-    override fun onFirstFrame() = loading.hide()
+    override fun onFirstFrame() {
+        loading.hide()
+        showBar(BAR_MS, badges = true)
+    }
 
     override fun onVideoAspect(ratio: Float) = frame.setAspectRatio(ratio)
 
@@ -213,22 +227,35 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
 
     override fun onChanged() {
         session.update(engine.item?.let { it.title ?: "" })
-        val going = engine.player.playWhenReady
+        val p = engine.player
+        val going = p.playWhenReady
+        val paused = engine.item != null && !going && !loading.showing &&
+            p.playbackState != Player.STATE_ENDED && p.playbackState != Player.STATE_IDLE
+        if (paused) pause.show(pauseAsked.takeIf { it > 0 } ?: SystemClock.uptimeMillis()) else pause.hide()
+        pauseAsked = 0
         if (going != wasGoing) showBar(BAR_MS)          // paused: it stays; resumed: it goes after a moment
         else if (bar.visibility == View.VISIBLE) drawBar()
         wasGoing = going
     }
 
     private var wasGoing = true
+    private var pauseAsked = 0L                     // when the pause shown next was asked for (uptime), for its log
 
     // ---- the remote, while the player is in front ----
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (pause.onKey(keyCode)) return true
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> if (event.repeatCount == 0) engine.toggle()
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> if (event.repeatCount == 0) {
+                pauseAsked = event.eventTime
+                engine.toggle()
+            }
             KeyEvent.KEYCODE_MEDIA_PLAY -> engine.play()
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> engine.pause()
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                pauseAsked = event.eventTime
+                engine.pause()
+            }
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> jump(event, -1)
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> jump(event, 1)
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> {}
@@ -319,9 +346,11 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
 
     private val unsay = Runnable { say(null) }
 
-    /** The time bar, for `ms` while playing; while paused it stays. */
-    private fun showBar(ms: Long) {
+    /** The time bar, for `ms` while playing; while paused it stays. With `badges` (after a load) it has them too. */
+    private fun showBar(ms: Long, badges: Boolean = false) {
         if (engine.item == null) return
+        if (badges) PauseScreen.fillBadges(barBadges, Badges.of(engine.videoFormat, engine.audioFormat, engine.item?.info?.badges.orEmpty()))
+        if (badges || bar.visibility != View.VISIBLE) barBadges.visibility = if (badges && barBadges.childCount > 0) View.VISIBLE else View.GONE
         drawBar()
         bar.visibility = View.VISIBLE
         main.removeCallbacks(hideBar)
@@ -329,7 +358,10 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
     }
 
     private val hideBar = Runnable {
-        if (engine.player.playWhenReady) bar.visibility = View.GONE
+        if (engine.player.playWhenReady) {
+            bar.visibility = View.GONE
+            barBadges.visibility = View.GONE
+        }
     }
 
     private fun drawBar() {
@@ -341,7 +373,10 @@ class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Actions {
             !p.playWhenReady -> getString(R.string.paused)
             else -> null
         }
-        title.text = listOfNotNull(engine.item?.title, what).joinToString(" · ")
+        // Over the pause screen the title is already there, above.
+        title.text = if (pause.showing) what.takeIf { scrub != C.TIME_UNSET }
+        else listOfNotNull(engine.item?.title, what).joinToString(" · ")
+        pause.update()
         time.text = clock(at)
         duration.text = if (dur > 0) clock(dur) else ""
         progress.progress = if (dur > 0) (at * 1000 / dur).toInt() else 0

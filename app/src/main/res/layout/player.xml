@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Into the window's own FrameLayout: the picture (a SurfaceView: DV and HDR need the hardware overlay plane), subtitles over it,
-     the loading screen (inflated when first shown), a centred message and a time bar shown on remote presses. -->
+     the loading and pause screens (inflated when first shown), a centred message and a time bar shown on remote presses. -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android">
 
     <androidx.media3.ui.AspectRatioFrameLayout
@@ -19,6 +19,13 @@
         android:id="@+id/subtitles"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <ViewStub
+        android:id="@+id/pause_stub"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inflatedId="@+id/pause"
+        android:layout="@layout/pause" />
 
     <ViewStub
         android:id="@+id/loading_stub"
@@ -52,15 +59,31 @@
         android:paddingBottom="36dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/title"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="8dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="#FFFFFFFF"
-            android:textSize="22sp" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="#FFFFFFFF"
+                android:textSize="22sp" />
+
+            <!-- The badges, for a few seconds after a load -->
+            <LinearLayout
+                android:id="@+id/bar_badges"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:visibility="gone" />
+        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"

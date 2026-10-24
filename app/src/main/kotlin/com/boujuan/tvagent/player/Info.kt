@@ -1,5 +1,7 @@
 package com.boujuan.tvagent.player
 
+import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import org.json.JSONObject
 
 /**
@@ -38,5 +40,50 @@ data class Info(
             text(o, key)?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
 
         fun gigabytes(bytes: Long): String = "%.1f GB".format(java.util.Locale.ROOT, bytes / 1e9)
+    }
+}
+
+/** The corner badges: what the playing tracks are, plus what only the agent knows from the release (its `badges`). */
+object Badges {
+    fun of(video: Format?, audio: Format?, agent: List<String>): List<String> {
+        val out = ArrayList<String>(8)
+        if (video != null) {
+            val w = video.width
+            val h = video.height
+            when {
+                w >= 3200 || h >= 2000 -> out += "4K"
+                w >= 1800 || h >= 1000 -> out += "1080p"
+                w >= 1200 || h >= 700 -> out += "720p"
+            }
+            when (Codecs.hdr(video)) {
+                "dv" -> out += "DV"
+                "hdr10" -> if ("hdr10+" !in agent) out += "HDR10"
+                "hlg" -> out += "HLG"
+            }
+            if ("hdr10+" in agent && Codecs.hdr(video) != "sdr") out += "HDR10+"
+        }
+        if (audio != null) {
+            val mime = audio.sampleMimeType
+            val label = audio.label.orEmpty().lowercase()
+            when (mime) {
+                MimeTypes.AUDIO_TRUEHD -> out += "TrueHD"
+                MimeTypes.AUDIO_DTS_HD -> out += if ("hra" in label || "high res" in label) "DTS-HD HRA" else "DTS-HD MA"
+                MimeTypes.AUDIO_DTS -> out += "DTS"
+                MimeTypes.AUDIO_E_AC3, MimeTypes.AUDIO_E_AC3_JOC -> out += "DD+"
+                MimeTypes.AUDIO_AC3 -> out += "DD"
+            }
+            // The release's Atmos or DTS:X is the main track's: it's shown only on a track of a codec that can carry it.
+            val dolby = mime == MimeTypes.AUDIO_TRUEHD || mime == MimeTypes.AUDIO_E_AC3 || mime == MimeTypes.AUDIO_E_AC3_JOC
+            val dts = mime == MimeTypes.AUDIO_DTS_HD || mime == MimeTypes.AUDIO_DTS || mime == MimeTypes.AUDIO_DTS_X
+            if (mime == MimeTypes.AUDIO_E_AC3_JOC || dolby && ("atmos" in label || "atmos" in agent)) out += "Atmos"
+            if (mime == MimeTypes.AUDIO_DTS_X || dts && ("dts:x" in label || "dts-x" in label || "dtsx" in agent)) out += "DTS:X"
+            when (audio.channelCount) {
+                8 -> out += "7.1"
+                6 -> out += "5.1"
+            }
+        }
+        if ("imax" in agent) out += "IMAX"
+        if ("remux" in agent) out += "REMUX"
+        return out
     }
 }

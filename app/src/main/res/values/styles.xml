@@ -8,7 +8,7 @@
         <item name="android:windowContentOverlay">@null</item>
     </style>
 
-    <!-- The loading screen's text -->
+    <!-- The loading and pause screens' text -->
     <style name="ScreenTitle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
@@ -31,4 +31,39 @@
         <item name="android:textSize">17sp</item>
     </style>
 
+    <style name="Badge">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">8dp</item>
+        <item name="android:background">@drawable/badge</item>
+        <item name="android:paddingHorizontal">7dp</item>
+        <item name="android:paddingVertical">2dp</item>
+        <item name="android:textColor">#FFFFFFFF</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="Chip">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">12dp</item>
+        <item name="android:background">@drawable/chip</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:paddingHorizontal">16dp</item>
+        <item name="android:paddingVertical">8dp</item>
+        <item name="android:textColor">@color/on_chip</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="Choice">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/choice</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:maxLines">2</item>
+        <item name="android:paddingHorizontal">14dp</item>
+        <item name="android:paddingVertical">10dp</item>
+        <item name="android:textColor">@color/on_chip</item>
+        <item name="android:textSize">16sp</item>
+    </style>
 </resources>
