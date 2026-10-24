@@ -3,6 +3,16 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.5.0 — 2026-10-24
+
+### Added
+- Holding ← or → shows a picture of where it's going, above the time bar at the target. tv-agent makes it on the
+  computer from the file (this TV can't decode a second 4K frame while the film plays): the keyframe at or before
+  the target, tone-mapped from HDR and Dolby Vision. On the TV it took 0.45 s from asking to the picture (median of
+  24, at most 1.15 s), with the film playing as before (DESIGN.md, "Previews while seeking"). It needs tv-agent server
+  0.9.0 and a Matroska file; otherwise the bar works as before.
+- PROTOCOL.md: the `thumb_req` event and the `thumb` command (optional: protocol version 1 still).
+
 ## 0.4.0 — 2026-10-24
 
 ### Added
