@@ -163,7 +163,19 @@ language stays).
 
 The file comes from `url`, or inline as `text`. `format` is `srt`, `vtt`, `ass`, `ssa` or `ttml`; without it, the
 player guesses from the content. It becomes a text track like the file's own. With `show` it's shown at once, at
-the current position, with no rebuffering. The answer has its index (`"text": 9`).
+the current position, with no rebuffering. The answer has its index (`"text": 9`). `delay_ms` (optional): how much
+later to show it (sooner when negative), as the agent measured this subtitle file against this video file before.
+
+### `sub_delay`: an added track timed to the file
+
+```json
+{"t": "sub_delay", "id": 9, "text": 9, "ms": -2300}
+```
+
+An added track's delay (`text`, an index from `add_sub`), measured by the agent after adding it: the addon's lines
+lined up with the file's own subtitles by when they start. Positive shows them later. The player keeps it within
+±10 s whatever comes, and shows it in the subtitles panel ("Synced −2.3 s"). A file's own tracks can't be given one
+(error "not an added subtitle"); a delay the viewer sets by hand wins over it for the rest of the file.
 
 ### `volume`
 

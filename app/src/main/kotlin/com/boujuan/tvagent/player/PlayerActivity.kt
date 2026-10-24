@@ -226,6 +226,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
                 "seek_by" -> engine.seekBy(cmd.getLong("ms"), cmd.optString("mode").ifEmpty { null })
                 "tracks" -> return ack(id, null, engine.tracks())
                 "select" -> engine.select(cmd)
+                "sub_delay" -> engine.subDelay(cmd)
                 "add_sub" -> return engine.addSub(cmd) { index, error -> ack(id, error, index?.let { JSONObject().put("text", it) }) }
                 "volume" -> volume(cmd)
                 "status" -> return ack(id, null, engine.status())

@@ -168,7 +168,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         preparedMs = -1; firstFrameMs = -1; seekAt = 0; videoFormat = null; videoDecoder = null; audioFormat = null
         loadErrorSent = false
         forgetBitstream()
-        delay.ms = 0
+        manualDelayMs = null
         normalSpeed()
         external.clear()
         host.onCues(emptyList())
@@ -262,13 +262,33 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         player.volume = level.toFloat().coerceIn(0f, 1f)
     }
 
-    /** Subtitles shown this much later (sooner when negative), for this file; 0 again with each load. */
-    var subtitleDelayMs: Long
-        get() = delay.ms
+    /**
+     * The subtitles' delay now (later when positive): set by hand for this file, else, for an added track, how far
+     * tv-agent measured it from this file. The file's own tracks are only ever moved by hand.
+     */
+    val subtitleDelayMs: Long get() = ExternalSubs.delay(manualDelayMs, autoDelayMs)
+
+    /** The agent's measurement for the added track shown; null when none was made or a file's own track shows. */
+    val autoDelayMs: Long? get() = external.tracks.getOrNull(external.shown)?.autoDelayMs
+
+    /** Set by hand (the subtitles panel): it wins over a measurement for the rest of this file; null undoes it. */
+    var manualDelayMs: Long? = null
         set(ms) {
-            delay.ms = ms
+            field = ms
+            delay.ms = ms ?: 0
             followSubs()
         }
+
+    /**
+     * `sub_delay`: an added track's delay, measured by tv-agent after it was added. Kept within
+     * ExternalSubs.MAX_AUTO_DELAY_MS whatever comes; a file's own track can't be given one.
+     */
+    fun subDelay(cmd: JSONObject) {
+        val track = external.tracks.getOrNull(cmd.getInt("text") - refs(C.TRACK_TYPE_TEXT).size)
+            ?: throw IllegalArgumentException("not an added subtitle")
+        track.autoDelayMs = ExternalSubs.measured(cmd.getLong("ms"))
+        followSubs()
+    }
 
     val speed get() = player.playbackParameters.speed
 
@@ -377,6 +397,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         val lang = cmd.optString("lang", "und")
         val label = cmd.optString("label").ifEmpty { lang }
         val show = cmd.optBoolean("show", true)
+        val autoDelay = if (cmd.has("delay_ms")) ExternalSubs.measured(cmd.getLong("delay_ms")) else null
         val format = cmd.optString("format").ifEmpty { null }
         val inline = if (cmd.has("text")) cmd.getString("text") else null
         val url = cmd.optString("url").ifEmpty { null }
@@ -392,6 +413,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
             main.post {
                 if (item !== forItem || released) return@post done(null, "another file is loaded")
                 if (result == null || result.events.isEmpty()) return@post done(null, "no subtitles in it")
+                result.autoDelayMs = autoDelay
                 external.tracks += result
                 val index = refs(C.TRACK_TYPE_TEXT).size + external.tracks.size - 1
                 if (show) select(JSONObject().put("text", index))
@@ -499,7 +521,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     // Subtitles from elsewhere follow the position while they're shown: 20 times a second while the picture moves.
     private val subsTick = object : Runnable {
         override fun run() {
-            external.cuesAt((player.currentPosition - delay.ms) * 1000)?.let(host::onCues)
+            external.cuesAt((player.currentPosition - subtitleDelayMs) * 1000)?.let(host::onCues)
             if (external.shown >= 0) main.postDelayed(this, if (player.isPlaying) 50 else 250)
         }
     }

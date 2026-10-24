@@ -3,6 +3,14 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.7.0 — 2026-10-24
+
+### Added
+- Subtitles from add-ons in time with the file by themselves: tv-agent (its next server release, after 0.12.0) measures how far an added
+  track runs from the file's own subtitles and sends it (`sub_delay`, or `delay_ms` with `add_sub` when it's known
+  already). The subtitles panel shows it as "Synced −2.3 s"; changing the timing by hand wins over it for the rest of
+  the file. Only added tracks are moved this way, never the file's own, and never by more than 10 s.
+
 ## 0.6.2 — 2026-10-24
 
 ### Changed

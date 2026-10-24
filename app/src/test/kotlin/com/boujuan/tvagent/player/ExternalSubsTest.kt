@@ -54,4 +54,19 @@ class ExternalSubsTest {
         assertEquals("ass", ExternalSubs.guess("[Script Info]\nTitle: x"))
         assertEquals("srt", ExternalSubs.guess(srt))
     }
+
+    @Test
+    fun aDelaySetByHandWinsOverTheAgentsMeasurementWhichOnlyAddedTracksHave() {
+        assertEquals(0L, ExternalSubs.delay(null, null))                 // a file's own track: none unless by hand
+        assertEquals(-500L, ExternalSubs.delay(null, -500))              // an added track as measured
+        assertEquals(300L, ExternalSubs.delay(300, -500))                // set by hand for this file
+        assertEquals(0L, ExternalSubs.delay(0, -500))                    // set back to none by hand: stays none
+    }
+
+    @Test
+    fun aMeasurementCantMoveSubtitlesFar() {
+        assertEquals(10_000L, ExternalSubs.measured(600_000))
+        assertEquals(-10_000L, ExternalSubs.measured(-45_000))
+        assertEquals(-2_300L, ExternalSubs.measured(-2_300))
+    }
 }

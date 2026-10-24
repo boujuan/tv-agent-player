@@ -44,6 +44,7 @@ class SubtitlePanel(private val root: View, private val engine: Engine, private 
     private var focus = 0                       // the column the arrows are in
     private var adjusting: Setting? = null      // the setting being changed, with its value before
     private var before = 0L
+    private var beforeDelay: Long? = null       // the delay set by hand before, null: none (Back puts that back)
 
     /** The right column's rows: the delay (this file's), then the look (kept on the TV). */
     private sealed class Setting {
@@ -139,6 +140,7 @@ class SubtitlePanel(private val root: View, private val engine: Engine, private 
 
     private fun startAdjusting(s: Setting) {
         adjusting = s
+        beforeDelay = engine.manualDelayMs
         before = when (s) {
             Setting.Delay -> engine.subtitleDelayMs
             is Setting.Look -> settings[s.option].toLong()
@@ -150,7 +152,7 @@ class SubtitlePanel(private val root: View, private val engine: Engine, private 
         val s = adjusting ?: return
         adjusting = null
         if (!keep) when (s) {
-            Setting.Delay -> engine.subtitleDelayMs = before
+            Setting.Delay -> engine.manualDelayMs = beforeDelay
             is Setting.Look -> {
                 settings[s.option] = before.toInt()
                 applied()
@@ -161,7 +163,8 @@ class SubtitlePanel(private val root: View, private val engine: Engine, private 
 
     private fun step(s: Setting, by: Int) {
         when (s) {
-            Setting.Delay -> engine.subtitleDelayMs = (engine.subtitleDelayMs + by * DELAY_STEP_MS).coerceIn(-DELAY_MAX_MS, DELAY_MAX_MS)
+            // From what shows now (a measurement too): set by hand, it stays for this file
+            Setting.Delay -> engine.manualDelayMs = (engine.subtitleDelayMs + by * DELAY_STEP_MS).coerceIn(-DELAY_MAX_MS, DELAY_MAX_MS)
             is Setting.Look -> {
                 val values = s.option.values
                 val k = (values.indexOf(settings[s.option]).takeIf { it >= 0 } ?: 0) + by
@@ -218,14 +221,23 @@ class SubtitlePanel(private val root: View, private val engine: Engine, private 
         })
         fill(2, rows.map { s ->
             val (label, value) = when (s) {
-                Setting.Delay -> context.getString(R.string.subtitle_delay) to engine.subtitleDelayMs.let { ms ->
-                    if (ms == 0L) context.getString(R.string.delay_none) else context.getString(R.string.delay_value, ms / 1000.0)
-                }
+                Setting.Delay -> context.getString(R.string.subtitle_delay) to delayText()
                 is Setting.Look -> context.getString(s.option.label) to s.option.show(context, settings[s.option])
             }
             val shownValue = if (s === adjusting) context.getString(R.string.adjust, value) else value
             context.getString(R.string.entry, label, shownValue) to false
         })
+    }
+
+    /** "Synced −0.5 s" for the agent's measurement, else the delay set by hand, or none. */
+    private fun delayText(): String {
+        val auto = engine.autoDelayMs
+        val ms = engine.subtitleDelayMs
+        return when {
+            engine.manualDelayMs == null && auto != null -> context.getString(R.string.delay_synced, auto / 1000.0)
+            ms == 0L -> context.getString(R.string.delay_none)
+            else -> context.getString(R.string.delay_value, ms / 1000.0)
+        }
     }
 
     /** A column's rows, its pick white while the arrows are in it, the current one ticked. */

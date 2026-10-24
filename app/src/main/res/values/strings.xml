@@ -42,7 +42,8 @@
     <string name="subtitle_settings">Timing and look</string>
     <string name="subtitle_delay">Timing</string>
     <string name="delay_value">%1$+.1f s</string>
-    <string name="delay_none">In sync</string>
+    <string name="delay_none">No delay</string>
+    <string name="delay_synced">Synced %1$+.1f s</string>
     <string name="no_subtitles">No subtitles in this file</string>
     <string name="subtitles_off">Subtitles off</string>
     <string name="adjust">‹  %1$s  ›</string>

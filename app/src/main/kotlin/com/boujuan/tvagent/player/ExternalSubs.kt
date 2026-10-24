@@ -18,7 +18,10 @@ import java.nio.charset.CodingErrorAction
  * parsed here with Media3's own parsers (same timing and styles as a file's tracks) and shown by the player.
  */
 class ExternalSubs {
-    class Track(val lang: String, val label: String, val format: String, val events: List<CuesWithTiming>)
+    class Track(val lang: String, val label: String, val format: String, val events: List<CuesWithTiming>) {
+        /** How much later to show it (ms), as tv-agent measured it against this file (subsync); null: not measured. */
+        var autoDelayMs: Long? = null
+    }
 
     val tracks = ArrayList<Track>()
     /** The track shown, or -1. */
@@ -113,6 +116,15 @@ class ExternalSubs {
             found.reverse()
             return found
         }
+
+        /** The most tv-agent's measurement may move an added track, either way: a wrong one can't go far (subsync). */
+        const val MAX_AUTO_DELAY_MS = 10_000L
+
+        /** The delay subtitles show with: one set by hand wins; else an added track's measurement; else none. */
+        fun delay(manual: Long?, measured: Long?): Long = manual ?: measured ?: 0
+
+        /** A measurement as kept: within MAX_AUTO_DELAY_MS whatever comes. */
+        fun measured(ms: Long): Long = ms.coerceIn(-MAX_AUTO_DELAY_MS, MAX_AUTO_DELAY_MS)
 
         private const val BOM = '\uFEFF'
         private const val LOOK_BACK = 16            // overlapping events farther back than this are ignored
