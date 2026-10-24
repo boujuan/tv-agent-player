@@ -57,6 +57,12 @@
     <string name="previous_episode">Previous episode</string>
     <string name="next_episode">Next episode</string>
     <string name="time_of">%1$s / %2$s</string>
+    <string name="skip_intro">Skip intro</string>
+    <string name="skip_recap">Skip recap</string>
+    <string name="skipped_intro">Skipped the intro</string>
+    <string name="skipped_recap">Skipped the recap</string>
+    <string name="next_in">Plays in %1$d s · OK now · Back to keep watching</string>
+    <string name="next_now">OK to play it · Back to keep watching</string>
     <string-array name="playback_speeds">
         <item>0.5×</item>
         <item>0.75×</item>

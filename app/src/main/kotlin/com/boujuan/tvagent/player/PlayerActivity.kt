@@ -53,6 +53,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
     private lateinit var progress: DefaultTimeBar
     private lateinit var barBadges: LinearLayout
     private lateinit var controls: Controls
+    private lateinit var markers: MarkerOverlay
     private lateinit var artwork: Artwork
     private lateinit var loading: LoadingScreen
     private lateinit var pause: PauseScreen
@@ -77,7 +78,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         settings = Settings(this)
         settings.styleSubtitles(subtitles)
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
-            if (!controls.back()) shutDown("back")
+            if (!controls.back() && !markers.back()) shutDown("back")
         }
         engine = Engine(this, this)
         engine.attach(findViewById<SurfaceView>(R.id.surface))
@@ -86,6 +87,11 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         pause = PauseScreen(findViewById<ViewStub>(R.id.pause_stub), artwork, engine)
         controls = Controls(findViewById(R.id.controls), findViewById(R.id.menu_stub), findViewById(R.id.subs_stub),
             engine, settings, controlsHost)
+        markers = MarkerOverlay(findViewById(R.id.markers_stub), engine, object : MarkerOverlay.Host {
+            override fun send(event: JSONObject) = this@PlayerActivity.send(event)
+            override fun barShown() = bar.visibility == View.VISIBLE
+            override fun paused() = pause.showing
+        })
         preview = SeekPreview(findViewById(R.id.preview_stub)) { link?.send(it) }
         session = Session(this, engine.player, this)
         if (standalone) {
@@ -226,6 +232,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
                 "seek_by" -> engine.seekBy(cmd.getLong("ms"), cmd.optString("mode").ifEmpty { null })
                 "tracks" -> return ack(id, null, engine.tracks())
                 "select" -> engine.select(cmd)
+                "markers" -> engine.markers(cmd)
                 "sub_delay" -> engine.subDelay(cmd)
                 "add_sub" -> return engine.addSub(cmd) { index, error -> ack(id, error, index?.let { JSONObject().put("text", it) }) }
                 "volume" -> volume(cmd)
@@ -298,6 +305,13 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
 
     override fun onVideoAspect(ratio: Float) = frame.setAspectRatio(ratio)
 
+    override fun onSeek(positionMs: Long) = markers.update(positionMs)
+
+    override fun onMarkers() {
+        markers.update()
+        if (bar.visibility == View.VISIBLE) controls.draw()
+    }
+
     override fun onActive(active: Boolean) {
         if (active) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -324,8 +338,12 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
      */
     private fun placeSubtitles() {
         val h = subtitles.height
-        val above = if (bar.visibility == View.VISIBLE && h > 0 && bar.height > 0)
-            (bar.height - bar.paddingTop + SUBTITLE_GAP_DP * resources.displayMetrics.density) / h else 0f
+        val barTop = if (bar.visibility == View.VISIBLE && bar.height > 0) (bar.height - bar.paddingTop).toFloat() else 0f
+        if (barTop != markersLift) {
+            markersLift = barTop
+            markers.lift(barTop)                        // the card over the bar; the button joins its controls
+        }
+        val above = if (barTop > 0 && h > 0) (barTop + SUBTITLE_GAP_DP * resources.displayMetrics.density) / h else 0f
         if (above != lifted) {
             lifted = above
             settings.styleSubtitles(subtitles, above)
@@ -333,6 +351,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
     }
 
     private var lifted = 0f
+    private var markersLift = 0f
 
     private val controlsHost = object : Controls.Host {
         override fun jump(direction: Int) = engine.seekBy(
@@ -349,6 +368,10 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         override fun sample(on: Boolean) = this@PlayerActivity.sample(on)
         override fun applied() = settings.styleSubtitles(subtitles, lifted)
         override fun agent() = pairing?.takeIf { connected }?.let { getString(R.string.about_connected, it.hosts.joinToString(", ")) }
+        override fun action() = markers.action()
+        override fun useAction() {
+            markers.use()
+        }
     }
 
     private var shownCues: List<Cue> = emptyList()
@@ -363,6 +386,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         val paused = engine.item != null && !going && !loading.showing &&
             p.playbackState != Player.STATE_ENDED && p.playbackState != Player.STATE_IDLE
         if (paused) pause.show(pauseAsked.takeIf { it > 0 } ?: SystemClock.uptimeMillis()) else pause.hide()
+        markers.update()                                // the position tick: a marker reached, the button, the card
         if (pause.showing) barBadges.visibility = View.GONE     // the pause screen has them in its corner
         if (!sampling) subtitles.visibility = if (pause.showing) View.INVISIBLE else View.VISIBLE
         pauseAsked = 0
@@ -390,6 +414,8 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // With the bar hidden, OK is the Skip button's or the Next episode card's while one shows
+        if (keyCode in OK_KEYS && event.repeatCount == 0 && markers.takesOk() && markers.use()) return true
         if (controls.takes(keyCode, bar.visibility == View.VISIBLE)) {
             controls.onKey(keyCode)
             lastKeyAt = event.eventTime
@@ -589,6 +615,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
             KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_INFO, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_STOP, KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        private val OK_KEYS = setOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)
         private val JUMP_KEYS = setOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND,
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD)
 

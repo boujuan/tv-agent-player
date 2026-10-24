@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -95,6 +96,7 @@ class Link(private val pairing: Pairing, private val version: String, private va
                 s = connect()
                 val input = s.inputStream.buffered()
                 val hello = JSONObject().put("t", "hello").put("v", PROTOCOL).put("token", pairing.token)
+                    .put("features", JSONArray(FEATURES))
                     .put("app", version).put("build", build).put("sdk", Build.VERSION.SDK_INT)
                 s.outputStream.write((hello.toString() + "\n").toByteArray())
                 s.outputStream.flush()
@@ -191,6 +193,8 @@ class Link(private val pairing: Pairing, private val version: String, private va
 
     companion object {
         const val PROTOCOL = 1
+        /** What this player does beyond protocol 1, for the agent to use (PROTOCOL.md, hello). */
+        val FEATURES = listOf("markers")
         /** The agent's address that answered last, for this process (it lives on between screens). */
         @Volatile private var lastHost: String? = null
         private const val TAG = "AgentLink"

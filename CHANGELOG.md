@@ -3,6 +3,18 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.8.0 — 2026-10-24
+
+### Added
+- A Skip intro / Skip recap button and a Next episode card, from tv-agent's markers (`markers` in `load` and
+  `preload`, or the `markers` command when they're found later). The button shows bottom right inside an intro or
+  recap: OK presses it while the time bar is hidden, and with the bar up it's a chip after the controls; Back hides
+  it. Intros and recaps marked `auto` are skipped by the player as playing reaches them (once, never after a seek
+  into one), with a short toast. At the credits the card offers the next episode, counting down while the film
+  plays when tv-agent gives a countdown; OK plays it at once, Back keeps watching. The player tells the agent
+  (`skipped`, `next_episode`), and says in its hello that it does this (`features`: `markers`), so the agent stops
+  skipping by itself. Inflated on first use; the checks ride the position tick.
+
 ## 0.7.1 — 2026-10-24
 
 ### Added

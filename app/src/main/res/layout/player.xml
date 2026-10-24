@@ -48,6 +48,14 @@
         android:textSize="24sp"
         android:visibility="gone" />
 
+    <!-- Skip intro / recap and the Next episode card (MarkerOverlay), under the bar and the lists -->
+    <ViewStub
+        android:id="@+id/markers_stub"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:inflatedId="@+id/markers"
+        android:layout="@layout/markers" />
+
     <!-- The time bar, shown on remote presses and while paused: a title row (the scrub's distance, the badges after a
          load), a thin bar with a round thumb, and the controls under it with the time, as in Stremio's player -->
     <LinearLayout

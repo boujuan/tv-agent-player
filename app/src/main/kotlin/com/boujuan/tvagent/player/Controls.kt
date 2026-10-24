@@ -2,10 +2,12 @@ package com.boujuan.tvagent.player
 
 import android.content.Context
 import android.view.KeyEvent
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewStub
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.media3.ui.AspectRatioFrameLayout
 import org.json.JSONObject
 
@@ -35,6 +37,9 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
         fun applied()
         /** What About says of tv-agent. */
         fun agent(): String?
+        /** A chip after the icons ("Skip intro", "Next episode": MarkerOverlay), or null. */
+        fun action(): String?
+        fun useAction()
     }
 
     private enum class Control(val icon: Int, val label: Int) {
@@ -53,6 +58,7 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
     private var menu: Menu? = null
     private var settingsMenu: SettingsMenu? = null
     private var subs: SubtitlePanel? = null
+    private var actionView: TextView? = null      // the chip after the icons, when there's an action
 
     /** The controls are in use (one picked, or a list or the panel open): the bar stays up. */
     val active get() = entry >= 0 || menu?.open == true || subs?.open == true
@@ -68,7 +74,17 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
             v.contentDescription = context.getString(if (playing) R.string.pause else R.string.play)
         }
         for ((k, c) in shown.withIndex()) views[c]?.isSelected = k == entry
+        val action = host.action()
+        actionView?.let { v ->
+            v.text = action
+            v.visibility = if (action != null) View.VISIBLE else View.GONE
+            v.isSelected = entry == shown.size
+        }
+        if (action == null && entry >= shown.size) entry = shown.size - 1
     }
+
+    /** The controls the arrows go through: the icons, then the action chip when there is one. */
+    private val count get() = shown.size + (if (host.action() != null) 1 else 0)
 
     private fun build(want: List<Control>) {
         shown = want
@@ -88,6 +104,10 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
             v.contentDescription = context.getString(c.label)
             views[c] = v
             row.addView(v)
+        }
+        actionView = (LayoutInflater.from(context).inflate(R.layout.chip, row, false) as TextView).also {
+            it.visibility = View.GONE
+            row.addView(it)
         }
     }
 
@@ -119,10 +139,11 @@ class Controls(private val row: LinearLayout, private val menuStub: ViewStub, pr
         }
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> entry = (entry - 1).coerceAtLeast(0)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> entry = (entry + 1).coerceAtMost(shown.size - 1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> entry = (entry + 1).coerceAtMost(count - 1)
             KeyEvent.KEYCODE_DPAD_UP -> entry = -1
             KeyEvent.KEYCODE_DPAD_DOWN -> {}
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> shown.getOrNull(entry)?.let(::use)
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER ->
+                if (entry == shown.size) host.useAction() else shown.getOrNull(entry)?.let(::use)
             else -> return false
         }
         draw()

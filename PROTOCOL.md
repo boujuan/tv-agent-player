@@ -24,8 +24,11 @@ Why this shape, and the alternatives considered, are in [DESIGN.md](DESIGN.md#co
 - **Hello**: the player's first line, within 3 s of connecting:
 
   ```json
-  {"t": "hello", "v": 1, "token": "…", "app": "0.1.0", "build": 1, "sdk": 34}
+  {"t": "hello", "v": 1, "token": "…", "app": "0.8.0", "build": 13, "sdk": 34, "features": ["markers"]}
   ```
+
+  `features`: what this player does beyond version 1 that the agent should use. `markers`: it shows the Skip intro
+  / recap button and the Next episode card, and skips `auto` markers itself (see `markers`).
 
   The agent answers `{"t": "welcome", "v": 1, "agent": "0.31.0"}`, or `{"t": "bye", "error": "unauthorized"}` (or
   `"version"`) and closes.
@@ -109,6 +112,28 @@ steps change. All fields are optional.
 
 A later `loading` for the same `item` changes what it has (usually only `step`); one for another item replaces it.
 The screen goes when the picture of the next `load` appears (whatever its `item`), on `osd ""` or on `stop`.
+
+### `markers`: intro, recap and credits
+
+```json
+{"t": "markers", "id": 14, "item": "tt22202452:1:3#k3x-2",
+ "markers": [{"kind": "recap", "start": 8008, "end": 49383, "auto": false},
+             {"kind": "intro", "start": 383791, "end": 408750, "auto": true},
+             {"kind": "credits", "start": 2521916, "end": 2582000, "auto": false}],
+ "next": {"title": "S1E4 · Please, Carol", "countdown_ms": 10000}}
+```
+
+Replaces the playing item's markers (ms in the file); for another item the answer is an error. `load` and `preload`
+take `markers` too (a preload's come along when it's played, unless the `load` has its own), and `load` may take
+`next`.
+- **Skip button**, bottom right, while the position is in `[start, end − 2 s)` of an intro or recap that isn't
+  `auto`. With the time bar hidden it's white and OK presses it; with the bar up it's a chip after the controls.
+  Back hides it for that marker. Pressed: an exact seek to `end`.
+- **`auto`** (intro, recap): skipped by the player when playing reaches `start`, once per load, never when a seek
+  lands inside it; a short toast says so.
+- **Next episode card** from `credits.start` (by playing or a seek) when `next` is given: OK accepts; with
+  `countdown_ms` > 0 it counts down while the film plays, then accepts by itself; Back dismisses it. Accepting only
+  sends `next_episode`: the agent answers with a `load`.
 
 ### `play`, `pause`, `toggle`
 
@@ -254,6 +279,8 @@ Events have no `id`. Each one about a file carries its `item`.
 | `closed` | `pos`, `dur`, `why` (`stop`, `back`, `home`, `error`, `replaced`, `idle`) | The last word about an item: on `stop`, Back, leaving the screen, a fatal error, a `load` of something else, or a minute after the end with nothing loaded since (the screen then closes). Sent before the decoder is released. Also for the item whose `loading` screen is up when the screen closes before its `load` (`pos` and `dur` 0): the viewer left that start |
 | `preloaded` | `ms` (how long it took) | When a `preload` is ready |
 | `key` | `key` (`next`, `previous`) | The remote's next or previous while the player is in front: the agent decides what comes next |
+| `skipped` | `kind`, `from`, `to` (ms), `how` (`button`, `auto`) | After the player skipped an intro or recap |
+| `next_episode` | `how` (`button`, `countdown`) | The Next episode card was accepted: the agent loads it |
 | `thumb_req` | `ms`, `w` | While ← or → is held: a picture of the target, answered with [`thumb`](#thumb-a-picture-of-where-a-held--is-going) |
 
 ### Track

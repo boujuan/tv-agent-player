@@ -57,10 +57,18 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         fun onChanged()
         /** The picture of a new load is up: the loading screen goes. */
         fun onFirstFrame()
+        /** A seek landed at `positionMs` (the remote's, the agent's or a skip). */
+        fun onSeek(positionMs: Long) {}
+        /** The item's markers or Next episode changed (the `markers` command). */
+        fun onMarkers() {}
     }
 
-    /** The file loaded now, as the agent named it, and what the pause screen says about it (`info`). */
-    class Item(val url: String, val id: String?, val title: String?, val loadedAt: Long, val info: Info?)
+    /**
+     * The file loaded now, as the agent named it, what the pause screen says about it (`info`), and where its intro,
+     * recap and credits are, with what comes next (`markers`).
+     */
+    class Item(val url: String, val id: String?, val title: String?, val loadedAt: Long, val info: Info?,
+               var markers: List<Marker> = emptyList(), var next: NextUp? = null)
 
     val http = Http(context)
     private val main = Handler(Looper.getMainLooper())
@@ -106,7 +114,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         private set
     private var preloaded: Preload? = null
     private class Preload(val item: MediaItem, val url: String, val id: String?, val plan: Selector.Plan,
-                          val info: Info?, val since: Long, var readyMs: Long = -1)
+                          val info: Info?, val since: Long, var readyMs: Long = -1, val markers: List<Marker> = emptyList())
 
     // Timing of the current load and seek (the `timing` and `first_frame` events)
     private var stats: Http.Stats? = null
@@ -161,7 +169,9 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         val start = cmd.optLong("start_ms", 0).coerceAtLeast(0)
         val ready = preloaded?.takeIf { p -> p.url == url }
         val it = Item(url, cmd.optString("item").ifEmpty { null }, cmd.optString("title").ifEmpty { null }, now,
-            Info.of(cmd.optJSONObject("info")) ?: ready?.info)
+            Info.of(cmd.optJSONObject("info")) ?: ready?.info,
+            if (cmd.has("markers")) Marker.list(cmd.optJSONArray("markers")) else ready?.markers.orEmpty(),
+            NextUp.of(cmd.optJSONObject("next")))
         item = it
         http.route(url, headers(cmd), stackOf(cmd))
         stats = Http.Stats(url, now).also { http.stats = it }
@@ -195,7 +205,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         http.route(url, headers(cmd), stackOf(cmd))
         val mediaItem = MediaItem.Builder().setUri(url).setMediaId("preload:" + (cmd.optString("item").ifEmpty { url.hashCode().toString() })).build()
         val p = Preload(mediaItem, url, cmd.optString("item").ifEmpty { null }, plan(cmd), Info.of(cmd.optJSONObject("info")),
-            SystemClock.elapsedRealtime())
+            SystemClock.elapsedRealtime(), markers = Marker.list(cmd.optJSONArray("markers")))
         preloadSelector.plan = p.plan
         preloadStart = cmd.optLong("start_ms", 0).coerceAtLeast(0)
         preloaded = p
@@ -260,6 +270,19 @@ class Engine(private val context: Context, private val host: Host) : Player.List
 
     fun volume(level: Double) {
         player.volume = level.toFloat().coerceIn(0f, 1f)
+    }
+
+    /** `markers`: the item's markers and Next episode, found after its load. Only for the item playing. */
+    fun markers(cmd: JSONObject) {
+        val it = item?.takeIf { it.id == cmd.optString("item").ifEmpty { null } }
+            ?: throw IllegalArgumentException("not the item playing")
+        it.markers = Marker.list(cmd.optJSONArray("markers"))
+        it.next = NextUp.of(cmd.optJSONObject("next"))
+        host.onMarkers()
+    }
+
+    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        if (reason == Player.DISCONTINUITY_REASON_SEEK) host.onSeek(newPosition.positionMs)
     }
 
     /**
