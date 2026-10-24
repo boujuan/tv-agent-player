@@ -13,6 +13,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpEngineDataSource
 import androidx.media3.datasource.TransferListener
+import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
@@ -70,21 +71,56 @@ class Http(private val context: Context) {
     }
 
     /** Counts for the playing file, for the `timing` event: requests, bytes, and when the first answer came. */
+    /**
+     * What a load read from the network, for its `timing` event: requests, bytes, the first byte, and each of its
+     * first reads (where in the file, when asked for, when the server answered, how much, when it stopped), to tell
+     * which of a start's reads (the header, the index, the place to start from) its time goes to.
+     */
     class Stats(val url: String, private val since: Long) : TransferListener {
         @Volatile var requests = 0
         @Volatile var bytes = 0L
         @Volatile var firstByteMs = -1L
 
-        override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+        /** One read, in ms from the load; -1: not yet. Written by its loader's thread only. */
+        class Read(val at: Long, val askedMs: Long) {
+            @Volatile var answeredMs = -1L
+            @Volatile var bytes = 0L
+            @Volatile var doneMs = -1L
+        }
+
+        private val reading = IdentityHashMap<DataSpec, Read>()
+        private val all = ArrayList<Read>()
+        val reads: List<Read> get() = synchronized(this) { all.toList() }
+
+        private fun now() = SystemClock.elapsedRealtime() - since
+
+        override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+            if (!isNetwork || dataSpec.uri.toString() != url) return
+            synchronized(this) {
+                if (all.size < MAX_READS) Read(dataSpec.position, now()).also { all += it; reading[dataSpec] = it }
+            }
+        }
+
         override fun onTransferStart(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
             if (!isNetwork || dataSpec.uri.toString() != url) return
             requests++
-            if (firstByteMs < 0) firstByteMs = SystemClock.elapsedRealtime() - since
+            if (firstByteMs < 0) firstByteMs = now()
+            synchronized(this) { reading[dataSpec] }?.answeredMs = now()
         }
+
         override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
-            if (isNetwork && dataSpec.uri.toString() == url) bytes += bytesTransferred
+            if (!isNetwork || dataSpec.uri.toString() != url) return
+            bytes += bytesTransferred
+            synchronized(this) { reading[dataSpec] }?.let { it.bytes += bytesTransferred }
         }
-        override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
+
+        override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {
+            synchronized(this) { reading.remove(dataSpec) }?.doneMs = now()
+        }
+
+        companion object {
+            const val MAX_READS = 12
+        }
     }
 
     @Volatile var stats: Stats? = null

@@ -602,10 +602,22 @@ class Engine(private val context: Context, private val host: Host) : Player.List
     private fun sendTiming(it: Item) {
         val s = stats ?: return
         stats = null                                // once per load
+        val ready = SystemClock.elapsedRealtime() - it.loadedAt
         val ms = JSONObject().put("first_byte", s.firstByteMs).put("prepared", preparedMs)
-            .put("first_frame", firstFrameMs).put("ready", SystemClock.elapsedRealtime() - it.loadedAt)
+            .put("first_frame", firstFrameMs).put("ready", ready)
+        val reads = JSONArray()
+        for (r in s.reads) reads.put(JSONObject().put("at", r.at).put("asked", r.askedMs).put("answered", r.answeredMs)
+            .put("bytes", r.bytes).put("done", r.doneMs))
         host.send(msg("timing", "item" to it.id, "ms" to ms, "bytes" to s.bytes, "requests" to s.requests,
-            "preloaded" to usedPreload, "cap_mb" to loading.cap / (1 shl 20)))
+            "preloaded" to usedPreload, "cap_mb" to loading.cap / (1 shl 20), "reads" to reads,
+            "decoder_ms" to decoderInitMs))
+        // The same in the log, to see where a real start's time went without the agent (no link in it)
+        Log.i(TAG, "start: first byte ${s.firstByteMs}, prepared $preparedMs, first frame $firstFrameMs, ready $ready ms" +
+            "${if (usedPreload) " (preloaded)" else ""}; video decoder $decoderInitMs ms; ${s.requests} requests, " +
+            "${"%.1f".format(s.bytes / 1e6)} MB: " + s.reads.joinToString("; ") { r ->
+                "@${"%.2f".format(r.at / 1e9)} GB asked ${r.askedMs}, answered ${r.answeredMs}, " +
+                    "${"%.2f".format(r.bytes / 1e6)} MB, done ${r.doneMs}"
+            })
     }
 
     override fun onLoadStarted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,

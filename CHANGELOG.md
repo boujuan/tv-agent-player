@@ -3,6 +3,14 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.7.1 — 2026-10-24
+
+### Added
+- Each start's reads in its `timing` event and in the TV's log ("start: first byte …"): where in the file each of
+  the first 12 network reads was, when it was asked for and answered, how much it got and when it stopped, and the
+  video decoder's start. Real starts' first frames take 2.1 s on the median against 1.3 s in DESIGN.md's tests;
+  this shows which reads (the header, the index, the place to start from) the difference goes to.
+
 ## 0.7.0 — 2026-10-24
 
 ### Added
