@@ -20,8 +20,8 @@ android {
         minSdk = 34
         targetSdk = 37
         // Released as v<versionName> tags (see RELEASING.md); bump versionCode with every release.
-        versionCode = 13
-        versionName = "0.8.0"
+        versionCode = 14
+        versionName = "0.8.1"
         // The TV's userspace is 32-bit only. The APK has no native code today; this keeps it that way if a
         // library ever brings some.
         ndk { abiFilters += "armeabi-v7a" }

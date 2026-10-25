@@ -3,6 +3,17 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.8.1 — 2026-10-25
+
+### Changed
+- Starts are 3-4 times faster to the first frame: on a 4K episode, 0.6-0.7 s instead of 1.9-2.7 s (DESIGN.md,
+  Starts).
+  - A resume starts at the keyframe at or before its position (at most 10 s earlier), instead of decoding every
+    frame from that keyframe without showing it: 5 s past one, that was 19 MB and 1.3 s more. A `load` with
+    `exact` (a jump to a moment) starts exactly.
+  - `prefetch` on `load` and `preload`: the parts of the file tv-agent knows a start needs (the seek index, the
+    cluster it starts from) are read at once, alongside the header, instead of one after another.
+
 ## 0.8.0 — 2026-10-24
 
 ### Added

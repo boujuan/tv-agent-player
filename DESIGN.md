@@ -93,7 +93,7 @@ warm, **5.8 s** cold. The time goes to these, and here's what this player does a
 | Process start and activity (0.5–0.7 s for Just Player, always cold because of `-S`; 3.1 s for a cold Kodi) | Started during the stream lookup, so off the critical path. A second title replaces the first in place: no relaunch, no home-screen flash between titles (test 4) |
 | Building the player and listing decoders (MediaCodecList queries can take hundreds of ms) | Done in `onCreate` before the link arrives; the decoder lists for DV, HEVC, AVC, AV1 and the audio formats are fetched on a background thread into Media3's per-process cache |
 | Three HTTP requests before the first frame: the MKV header, its Cues (near the end of the file), back to the start position | Unavoidable for an MKV. Android's built-in Cronet keeps one connection for all three instead of a handshake each: chosen by measurement ([below](#measured-on-the-tv)) over HttpURLConnection and OkHttp |
-| Decoding from the keyframe before the start position (Media3 always starts a file exactly where it's told) | No consistent cost measured: The Boys S04E03 from 0:00 showed its first frame 2.30 s after the command, S04E01 from 10:00 and 40:00 2.18 s and 2.50 s (player's own event). Left exact |
+| Decoding from the keyframe before the start position (Media3 always starts a file exactly where it's told) | Measured wrong at first (no consistent cost); a start 5 s past a keyframe read 19-25 MB and took 1-2 s more. A resume now starts at the keyframe (Starts, below) |
 | `bufferForPlaybackMs` (Media3's 1 s buffered before playing) | Kept: playing starts 0.15–0.4 s after the first frame, since the CDN delivers ~4× a WEB-DL's bitrate, so a lower threshold gains little and risks a rebuffer right after the start |
 | The next episode in binge mode | `preload` while the credits roll: header, Cues and the first seconds are already in memory, so the next one starts at decoder speed (measured: 0.10 s) |
 | Seeks | Forward and back buffers in memory, so ±10–30 s jumps stay inside them: no HTTP request, only a decoder flush. Fast `seek_by` commands add up into one seek |
@@ -165,6 +165,34 @@ Just Player needed a relaunch for any exact jump (3.5 s in the tests) and buffer
 **Smoothness** (`dumpsys media.metrics`, written by Android per decoder session): 23.8–24.4 fps in every session,
 0–2 dropped frames and at most one freeze (83–208 ms) per session; the REMUX session with seven seeks dropped 10.
 Just Player 0.217 in the tests: 4–9 dropped, up to 2 freezes of 224 ms.
+
+## Starts
+
+What a start reads before its first frame, from the player's `timing` event (`reads`, 0.7.1), on Breaking Bad
+S02E04 (4K WEB-DL, 7.2 GB, Premiumize), 2026-10-25, the same link each time:
+
+| Start | 0.8.0 | Keyframe start | Keyframe start and `prefetch` |
+|---|---|---|---|
+| 0:00 | 1.87 s (2.9 MB) | 1.40 s (2.8 MB) | 0.67 s (4.7 MB) |
+| 0:05 | 2.54 s (19.4 MB) | 1.27 s (1.7 MB) | 0.62 s (5.3 MB) |
+| 12:34 | 2.65 s (13.8 MB) | 1.39 s (2.9 MB) | 0.69 s (4.7 MB) |
+| 30:00 | 2.40 s (7.3 MB) | 1.37 s (1.6 MB) | 0.72 s (4.3 MB) |
+
+First frame from the `load`'s arrival, with what was read before it.
+
+- **One read after another.** Media3 reads the header (~0.25 s to its answer), then the seek index (the Cues: 0.49 MB
+  at 7.16 GB, ~0.25 s more to answer and to read), and only then the file from where it starts: it needs the index
+  to prepare, whether it starts at 0 or not.
+- **Frames decoded unseen.** It started exactly where told, so it read and decoded every frame from the keyframe
+  before the position: 5 s of 4K past one is 19 MB. Seek modes only apply once a file is prepared, so the file's
+  period moves its first start itself (KeyframeStart): to the keyframe at or before the position, at most 10 s
+  earlier. A `load` with `exact` (a jump to a moment) still starts exactly.
+- **`prefetch`.** tv-agent knows a file's index once it has read it for previews, and sends the index's range and
+  the start's cluster (4 MB) with the `load`; the player asks for them at once, alongside the header, and answers
+  Media3's reads from them as they arrive. All three answer within ~0.25 s, and the first frame follows at ~0.65 s.
+  Past the 4 MB the reads go on from the network (20 s played from 30:00 without rebuffering, the buffer full at
+  38 s ahead). A start before the agent has the index (a file never played, looked up during the command) reads as
+  without it.
 
 ## Memory
 
