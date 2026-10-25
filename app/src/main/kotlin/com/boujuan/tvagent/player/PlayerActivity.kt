@@ -76,6 +76,10 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         barBadges = findViewById(R.id.bar_badges)
         bar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeSubtitles() }   // shown, hidden, or a row more or less
         settings = Settings(this)
+        settings.watch {
+            main.removeCallbacks(sendSettings)
+            main.postDelayed(sendSettings, SETTINGS_EVENT_MS)
+        }
         settings.styleSubtitles(subtitles)
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) {
             if (!controls.back() && !markers.back()) shutDown("back")
@@ -126,6 +130,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         shut = true
         if (standalone) setResult(RESULT_OK, result())
         main.removeCallbacksAndMessages(null)
+        settings.watch(null)
         // Left while a start was on the way (its loading screen up, its file not loaded yet): the agent hears which
         // start it was, so it stops it, where it used to try loading it into the closed screen and fail (16:55, 2026-10-24).
         loading.item?.takeIf { loading.showing && it != engine.item?.id }?.let { starting ->
@@ -185,7 +190,12 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         connected = true
         if (engine.item == null) say(null)
         engine.sendAll()
+        sendSettings.run()
     }
+
+    // The options as they are now, for tv-agent's backup: once connected, and a second after they change (a look being
+    // tried changes them at each press)
+    private val sendSettings = Runnable { link?.send(msg("settings", "values" to settings.values())) }
 
     override fun onDown() {
         connected = false
@@ -233,6 +243,10 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
                 "tracks" -> return ack(id, null, engine.tracks())
                 "select" -> engine.select(cmd)
                 "markers" -> engine.markers(cmd)
+                "settings" -> {
+                    if (settings.apply(cmd.optJSONObject("values") ?: JSONObject())) settings.styleSubtitles(subtitles, lifted)
+                    return ack(id, null, JSONObject().put("values", settings.values()))
+                }
                 "sub_delay" -> engine.subDelay(cmd)
                 "add_sub" -> return engine.addSub(cmd) { index, error -> ack(id, error, index?.let { JSONObject().put("text", it) }) }
                 "volume" -> volume(cmd)
@@ -605,6 +619,7 @@ open class PlayerActivity : Activity(), Link.Listener, Engine.Host, Session.Acti
         private const val BAR_MS = 4_000L
         private const val CONTROLS_MS = 10_000L           // the bar stays this long after the last key in its controls
         private const val SAY_MS = 6_000L
+        private const val SETTINGS_EVENT_MS = 1_000L
         private const val SUBTITLE_GAP_DP = 8
         private const val IDLE_MS = 60_000L
         private const val LET_GO_MS = 700L

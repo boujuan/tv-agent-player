@@ -29,7 +29,8 @@ Why this shape, and the alternatives considered, are in [DESIGN.md](DESIGN.md#co
 
   `features`: what this player does beyond version 1 that the agent should use. `markers`: it shows the Skip intro
   / recap button and the Next episode card, and skips `auto` markers itself (see `markers`). `subs_unless`: it
-  takes `load`'s `subs_unless`. `original`: it takes `audio: "original"` and marks tracks `original`.
+  takes `load`'s `subs_unless`. `original`: it takes `audio: "original"` and marks tracks `original`. `settings`: it
+  sends its options (`settings` event) and takes them back (`settings` command), for the agent's backup.
 
   The agent answers `{"t": "welcome", "v": 1, "agent": "0.31.0"}`, or `{"t": "bye", "error": "unauthorized"}` (or
   `"version"`) and closes.
@@ -138,6 +139,15 @@ take `markers` too (a preload's come along when it's played, unless the `load` h
 - **Next episode card** from `credits.start` (by playing or a seek) when `next` is given: OK accepts; with
   `countdown_ms` > 0 it counts down while the film plays, then accepts by itself; Back dismisses it. Accepting only
   sends `next_episode`: the agent answers with a `load`.
+
+### `settings`: the player's options back from a backup
+
+```json
+{"t": "settings", "id": 15, "values": {"sub_size": 125, "jump_back": 15}}
+```
+
+Sets each key given to its value when the option offers that value; unknown keys and values are ignored. The
+answer has `values`: all of them as they are now. The keys are those of the `settings` event.
 
 ### `play`, `pause`, `toggle`
 
@@ -284,6 +294,7 @@ Events have no `id`. Each one about a file carries its `item`.
 | `preloaded` | `ms` (how long it took) | When a `preload` is ready |
 | `key` | `key` (`next`, `previous`) | The remote's next or previous while the player is in front: the agent decides what comes next |
 | `skipped` | `kind`, `from`, `to` (ms), `how` (`button`, `auto`) | After the player skipped an intro or recap |
+| `settings` | `values`: every option, defaults included: `sub_size` (%), `sub_place` (% from the bottom), `sub_color`, `sub_background`, `sub_edge`, `sub_font` (0: as the TV), `jump_back`, `jump_forward` (s), `held_speed` (0-2), `badges` (0/1) | After `welcome`, and a second after any of them changes (here or on the home screen's settings) |
 | `next_episode` | `how` (`button`, `countdown`) | The Next episode card was accepted: the agent loads it |
 | `thumb_req` | `ms`, `w` | While ← or → is held: a picture of the target, answered with [`thumb`](#thumb-a-picture-of-where-a-held--is-going) |
 

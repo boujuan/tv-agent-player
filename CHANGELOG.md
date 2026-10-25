@@ -3,6 +3,13 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.9.1 — 2026-10-25
+
+### Added
+- The player's options for tv-agent's backup: a `settings` event with all ten (after `welcome`, and a second after
+  one changes, here or on the home screen) and a `settings` command that sets them back, each only to a value its
+  option offers. The hello lists `settings` in `features`.
+
 ## 0.9.0 — 2026-10-25
 
 ### Added

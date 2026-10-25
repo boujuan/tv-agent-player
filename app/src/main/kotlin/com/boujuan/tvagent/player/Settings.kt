@@ -1,11 +1,13 @@
 package com.boujuan.tvagent.player
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Typeface
 import android.view.accessibility.CaptioningManager
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
+import org.json.JSONObject
 
 /**
  * What the viewer sets with the remote, in the pause screen's Settings or the app on the home screen, kept on the
@@ -26,6 +28,31 @@ class Settings(private val context: Context) {
 
     operator fun get(o: Option): Int = prefs.getInt(o.key, o.default).takeIf { it in o.values } ?: o.default
     operator fun set(o: Option, v: Int) = prefs.edit().putInt(o.key, v).apply()
+
+    /** Every option's value now, by key, defaults included (the `settings` event: tv-agent keeps them in its backup). */
+    fun values(): JSONObject = JSONObject().apply { for (o in ALL) put(o.key, get(o)) }
+
+    /** The `settings` command: each key set to a value its option offers; others left as they are. Whether one changed. */
+    fun apply(values: JSONObject): Boolean {
+        var changed = false
+        for (o in ALL) {
+            val v = values.opt(o.key) as? Number ?: continue
+            if (accepts(o.key, v.toInt()) && v.toInt() != get(o)) {
+                set(o, v.toInt())
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    private var watching: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    /** `changed` after any option changes here or on the home screen's settings; null stops it. */
+    fun watch(changed: (() -> Unit)?) {
+        watching?.let(prefs::unregisterOnSharedPreferenceChangeListener)
+        watching = changed?.let { c -> SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> c() } }
+            ?.also(prefs::registerOnSharedPreferenceChangeListener)
+    }
 
     /**
      * Subtitles as set, from the TV's captions settings for what's left "As the TV"; at least `above` (a fraction of
@@ -88,6 +115,9 @@ class Settings(private val context: Context) {
             HELD_SPEED, BADGES)
         /** The options that change how subtitles look: shown on a sample line while they're picked. */
         val LOOK = setOf(SUB_SIZE, SUB_PLACE, SUB_COLOR, SUB_BACKGROUND, SUB_EDGE, SUB_FONT)
+
+        /** Whether `value` is one the option `key` offers (a `settings` command's values are checked with it). */
+        fun accepts(key: String, value: Int): Boolean = ALL.firstOrNull { it.key == key }?.let { value in it.values } == true
 
         /** The pause menu's quick sizes, with names; Settings has them all as numbers. */
         val SIZES = intArrayOf(60, 80, 100, 125, 150)

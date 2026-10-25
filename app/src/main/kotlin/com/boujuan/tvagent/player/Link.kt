@@ -194,7 +194,7 @@ class Link(private val pairing: Pairing, private val version: String, private va
     companion object {
         const val PROTOCOL = 1
         /** What this player does beyond protocol 1, for the agent to use (PROTOCOL.md, hello). */
-        val FEATURES = listOf("markers", "subs_unless", "original")
+        val FEATURES = listOf("markers", "subs_unless", "original", "settings")
         /** The agent's address that answered last, for this process (it lives on between screens). */
         @Volatile private var lastHost: String? = null
         private const val TAG = "AgentLink"
