@@ -4,6 +4,8 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /** The same cases as tv-agent's test_language_plan, plus what only the player decides (forced, commentary, script). */
@@ -79,5 +81,13 @@ class LangTest {
         assertEquals("es", Lang.code("spa"))
         assertEquals("zh", Lang.code("chs"))
         assertEquals("de", Lang.code("ger"))
+    }
+
+    @Test
+    fun theAudiosLanguageIsMatchedAsAudioIs() {
+        assertTrue(Lang.sameLanguage("es", "spa"))                     // subs_unless "spa" with Spanish audio
+        assertTrue(Lang.sameLanguage("spa", "spa"))
+        assertFalse(Lang.sameLanguage("en", "spa"))
+        assertFalse(Lang.sameLanguage(null, "spa"))                    // audio without a language: the subtitles as asked
     }
 }

@@ -28,7 +28,8 @@ Why this shape, and the alternatives considered, are in [DESIGN.md](DESIGN.md#co
   ```
 
   `features`: what this player does beyond version 1 that the agent should use. `markers`: it shows the Skip intro
-  / recap button and the Next episode card, and skips `auto` markers itself (see `markers`).
+  / recap button and the Next episode card, and skips `auto` markers itself (see `markers`). `subs_unless`: it
+  takes `load`'s `subs_unless`. `original`: it takes `audio: "original"` and marks tracks `original`.
 
   The agent answers `{"t": "welcome", "v": 1, "agent": "0.31.0"}`, or `{"t": "bye", "error": "unauthorized"}` (or
   `"version"`) and closes.
@@ -70,8 +71,9 @@ except `bench`. Commands are applied in the order they arrive.
 | `title` | Shown on the player's screen when it shows the time |
 | `start_ms` | Where to start, to the millisecond. 0 or absent: the beginning |
 | `bitrate` | The file's average bit/s if the agent knows it (size / length). It sizes the buffer; without it, the player works it out once the file's header is read |
-| `audio` | ISO 639-2 language for the audio (`eng`, `spa`, `chs`/`cht` for the two Chinese scripts). Commentary and audio-description tracks are never chosen by language. Absent or null: the file's default track |
+| `audio` | ISO 639-2 language for the audio (`eng`, `spa`, `chs`/`cht` for the two Chinese scripts). Commentary and audio-description tracks are never chosen by language. Absent or null: the file's default track. `"original"`: the track the file marks original (Matroska FlagOriginal), never a commentary or described one; none marked: the default track |
 | `subs` | Subtitle languages in order of preference. A full track is chosen, never a forced one, plain before SDH, Castilian before Latin American Spanish. `null`: subtitles off, except a forced track in the audio's language (it translates the lines that aren't in that language) |
+| `subs_unless` | ISO 639-2 language: when the audio chosen (by `audio`) is in it, subtitles are off as for `subs: null`; else `subs` applies. Part of the first choice, before the first frame (for a `preload`, when it plays); a track picked later isn't undone by it. Absent or null: no rule |
 | `play` | `false` loads it paused. Default `true` |
 | `prefetch` | Parts of the file to read at once, alongside the header: `[{"at": byte offset, "bytes": length}]`, at most 4 and 16 MB in all; for a `preload` too. Meant for the seek index (an MKV's Cues, often at the end) and the cluster the start's keyframe is in, which Media3 would otherwise read one after another. A read inside one is answered from memory; past it, from the network. Optional: only what the agent knows |
 | `exact` | `true`: start exactly at `start_ms` (a jump to a moment). Otherwise a start past 0 begins at the keyframe at or before it (at most 10 s earlier): the frames before it aren't decoded unseen |
@@ -294,7 +296,8 @@ Events have no `id`. Each one about a file carries its `item`.
 
 `lang` is the file's language, normalised the way Media3 does it: ISO 639-1 where one exists (`en`, `es`, `zh`),
 else ISO 639-2. `label` is the track's name in the file (an MKV's `Name`): Simplified or Traditional Chinese,
-commentary and SDH are only told apart there. `ch` and `commentary` (commentary or audio description, by name) are
+commentary and SDH are only told apart there. `original` (audio, present only when true): the file marks the track
+original (Matroska FlagOriginal, read from the file's header). `ch` and `commentary` (commentary or audio description, by name) are
 for audio tracks only. `codec` is short: `eac3`, `truehd`, `dts-hd`, `srt`, `ass`, `pgs`…
 
 ## Security

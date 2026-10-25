@@ -7,6 +7,7 @@ import android.net.http.HttpEngine
 import android.os.Build
 import android.os.ext.SdkExtensions
 import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
@@ -46,6 +47,33 @@ class Http(private val context: Context) {
         routes.remove(url)
         lengths.remove(url)
         ranges.remove(url)
+        heads.remove(url)
+        originals.remove(url)
+    }
+
+    /** The track numbers each link's file marks original (Matroska FlagOriginal, MkvTracks), once its header is read. */
+    val originals = ConcurrentHashMap<String, Set<Int>>()
+
+    /** The first bytes of a link read from its start, copied until its tracks are read from them. */
+    private class Head {
+        val data = ByteArray(HEAD_BYTES)
+        var filled = 0
+        var tried = 0
+    }
+
+    private val heads = ConcurrentHashMap<String, Head>()
+
+    private fun feed(url: String, head: Head, buffer: ByteArray, offset: Int, n: Int): Boolean {
+        val take = minOf(n, HEAD_BYTES - head.filled)
+        System.arraycopy(buffer, offset, head.data, head.filled, take)
+        head.filled += take
+        if (head.filled - head.tried < HEAD_STEP && head.filled < HEAD_BYTES) return true
+        head.tried = head.filled
+        val found = MkvTracks.originals(head.data, head.filled) ?: if (head.filled < HEAD_BYTES) return true else emptySet()
+        originals[url] = found
+        heads.remove(url)
+        if (found.isNotEmpty()) Log.i("Http", "tracks marked original: ${found.sorted()}")
+        return false
     }
 
     /**
@@ -215,8 +243,14 @@ class Http(private val context: Context) {
             return openNetwork(dataSpec)
         }
 
+        private var head: Head? = null              // this read's first bytes are copied (from the file's start)
+        private var headUrl = ""                    // as asked for: its answer may come from a redirect
+
         private fun openNetwork(dataSpec: DataSpec): Long {
-            val route = routes[dataSpec.uri.toString()]
+            val url = dataSpec.uri.toString()
+            head = if (dataSpec.position == 0L && !originals.containsKey(url)) Head().also { heads[url] = it } else null
+            headUrl = url
+            val route = routes[url]
             val source = factory(route?.stack ?: stack).createDataSource()
             listeners.forEach(source::addTransferListener)
             stats?.let(source::addTransferListener)
@@ -227,7 +261,11 @@ class Http(private val context: Context) {
             return length
         }
 
-        override fun read(buffer: ByteArray, offset: Int, length: Int): Int = current!!.read(buffer, offset, length)
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val n = current!!.read(buffer, offset, length)
+            head?.let { h -> if (n > 0 && !feed(headUrl, h, buffer, offset, n)) head = null }
+            return n
+        }
 
         /**
          * A read inside a prefetched range: from memory as it arrives, then from the network at the first byte it
@@ -288,6 +326,8 @@ class Http(private val context: Context) {
     companion object {
         const val TIMEOUT_MS = 8_000
         const val MAX_RANGES = 4
+        private const val HEAD_BYTES = 256 shl 10      // a file's tracks are well within its first 256 KB
+        private const val HEAD_STEP = 4 shl 10          // its tracks looked for each time this much more has come
         const val MAX_PREFETCH = 16 shl 20              // bytes, all ranges together
         private const val RANGE_WAIT_MS = 1_000L        // a wait's slice: a stopped range shows within a second
     }

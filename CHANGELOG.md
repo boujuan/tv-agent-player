@@ -3,6 +3,17 @@
 One section per release, newest first; each `## X.Y.Z` section becomes that tag's GitHub Release notes. Format:
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions: [SemVer](https://semver.org/).
 
+## 0.9.0 — 2026-10-25
+
+### Added
+- `subs_unless` on `load` and `preload`: with the audio chosen in that language, subtitles are off; otherwise the
+  `subs` asked for. The player decides it in its first choice, before the first frame, where the agent used to
+  correct the subtitles after the start (a moment with none, or with ones that shouldn't show). A track picked
+  later isn't undone by it.
+- The original audio: `audio: "original"` plays the track the file marks original (Matroska FlagOriginal, read from
+  the file's first bytes, which Media3 doesn't read), and audio tracks say `original` in `tracks`.
+- The hello lists both in `features` (`subs_unless`, `original`), so tv-agent sends them only to this player.
+
 ## 0.8.1 — 2026-10-25
 
 ### Changed

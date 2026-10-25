@@ -98,7 +98,7 @@ class Engine(private val context: Context, private val host: Host) : Player.List
                 for (i in from until out.size) out[i] = Delayed(out[i], delay)
             }
         }.setMediaCodecSelector(Codecs.selector).setEnableDecoderFallback(true))
-        .setTrackSelectorFactory { Selector(it).also(selectors::add) }
+        .setTrackSelectorFactory { Selector(it, http).also(selectors::add) }
         .setLoadControl(loading)
     val player: ExoPlayer = builder.buildExoPlayer(
         ExoPlayer.Builder(context)
@@ -377,7 +377,10 @@ class Engine(private val context: Context, private val host: Host) : Player.List
             .put("default", f.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0).put("forced", Lang.isForced(f))
             .put("sdh", Lang.isSdh(f)).put("external", false).put("selected", g.isTrackSelected(t))
             .put("supported", g.isTrackSupported(t))
-        if (g.type == C.TRACK_TYPE_AUDIO) o.put("ch", f.channelCount).put("commentary", Lang.isExtraAudio(f))
+        if (g.type == C.TRACK_TYPE_AUDIO) {
+            o.put("ch", f.channelCount).put("commentary", Lang.isExtraAudio(f))
+            if (selector.original(selector.plan.copy(url = item?.url), f)) o.put("original", true)
+        }
         return o
     }
 
@@ -848,7 +851,8 @@ class Engine(private val context: Context, private val host: Host) : Player.List
         fun plan(cmd: JSONObject): Selector.Plan {
             val audio = if (cmd.isNull("audio")) null else cmd.optString("audio").ifEmpty { null }
             val subs = cmd.optJSONArray("subs")?.let { a -> (0 until a.length()).map { a.getString(it) } }
-            return Selector.Plan(audio, subs)
+            val unless = if (cmd.isNull("subs_unless")) null else cmd.optString("subs_unless").ifEmpty { null }
+            return Selector.Plan(audio, subs, unless, cmd.optString("url").ifEmpty { null })
         }
 
         /** Error text without anything that looks like a link (they carry the debrid key). */

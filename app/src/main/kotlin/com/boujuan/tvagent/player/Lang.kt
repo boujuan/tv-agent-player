@@ -27,6 +27,10 @@ object Lang {
         else -> Util.normalizeLanguageCode(w).substringBefore('-')
     }
 
+    /** A language as Media3 gives it ("es") is the agent's ("spa"), as for `audio`. */
+    fun sameLanguage(language: String?, want: String): Boolean =
+        language != null && Util.normalizeLanguageCode(language).substringBefore('-') == code(want)
+
     fun matches(f: Format, want: String): Boolean {
         val lang = f.language?.let { Util.normalizeLanguageCode(it) } ?: return false
         if (lang.substringBefore('-') != code(want)) return false
