@@ -191,8 +191,19 @@ First frame from the `load`'s arrival, with what was read before it.
   the start's cluster (4 MB) with the `load`; the player asks for them at once, alongside the header, and answers
   Media3's reads from them as they arrive. All three answer within ~0.25 s, and the first frame follows at ~0.65 s.
   Past the 4 MB the reads go on from the network (20 s played from 30:00 without rebuffering, the buffer full at
-  38 s ahead). A start before the agent has the index (a file never played, looked up during the command) reads as
-  without it.
+  38 s ahead).
+- **A file the agent hasn't read yet.** From the first 256 KB (read anyway when it checks the link) the agent knows
+  where the index starts, not its length nor where a resume's cluster is: it sends the index with a guessed length
+  (up to 1 MiB, to the end of the file), and from 0 the first cluster too. Measured the same way, a second run:
+
+  | Start | No `prefetch` | Index guessed (and the first cluster from 0) | The whole index known |
+  |---|---|---|---|
+  | 0:00 | 1.42 s | 0.66 s | 0.66 s |
+  | 0:05 | 1.26 s | 0.76 s | 0.55 s |
+  | 12:34 | 1.40 s | 1.09 s | 0.73 s |
+  | 30:00 | 1.36 s | 1.01 s | 0.69 s |
+
+  A resume with the index alone still asks for its cluster after preparing: one more round trip, ~0.35 s.
 
 ## Memory
 
